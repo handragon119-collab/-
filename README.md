@@ -94,6 +94,24 @@ python jarvis.py --text     # 강제 텍스트(키보드) 모드
 
 ---
 
+## 🆘 박수를 쳐도 안 깨어날 때 (특히 macOS)
+
+먼저 **마이크 진단 도구**를 돌려보세요. 가장 빠르게 원인을 찾습니다:
+```bash
+python clap_test.py
+```
+→ 박수를 칠 때 막대그래프가 출렁이고 `CLAP!` 이 떠야 정상입니다.
+
+| 증상 | 원인 / 해결 |
+|------|------|
+| **막대가 전혀 안 움직임 / 음량 0** | **macOS 마이크 권한 문제.** `시스템 설정 → 개인정보 보호 및 보안 → 마이크` 에서 **터미널**(또는 iTerm)을 켜고, 터미널을 완전히 종료 후 다시 실행 |
+| **PyAudio 오류로 시작도 안 됨** | `brew install portaudio && pip install pyaudio` |
+| 막대는 움직이는데 박수에 반응 없음 | 임계값이 높음 → `.env` 에 `JARVIS_CLAP_MULT=3` (더 민감) 또는 `JARVIS_CLAP_THRESHOLD=2000` |
+| 말소리에도 자꾸 깨어남 | 임계값이 낮음 → `JARVIS_CLAP_MULT=8` 로 올리기 |
+| 그냥 박수 없이 쓰고 싶음 | `python jarvis.py --word` (호출어 '자비스') 또는 `--text` (키보드) |
+
+> 💡 화면에 **아무것도 안 뜬다면** 아직 실행이 안 된 것일 수 있어요. 자비스를 받은 폴더 안에서 `python jarvis.py` 를 입력했는지, 그리고 위 `pip install -r requirements.txt` 를 했는지 확인하세요.
+
 ## 🛠 커스터마이징
 
 - **호출어 바꾸기**: `.env` 의 `JARVIS_WAKE_WORD=프라이데이`

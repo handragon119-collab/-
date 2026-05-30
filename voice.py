@@ -179,18 +179,31 @@ class Voice:
             return bool(self.listen("👏 박수 대기(또는 '자비스'라고 부르기)..."))
 
         CHUNK, RATE = 1024, 16000
-        pa = pyaudio.PyAudio()
-        stream = pa.open(format=pyaudio.paInt16, channels=1, rate=RATE,
-                         input=True, frames_per_buffer=CHUNK)
         try:
-            # 주변 소음 기준선 측정 (약 0.4초)
-            ambient = 1.0
-            for _ in range(6):
-                ambient = max(ambient, _rms(stream.read(CHUNK, exception_on_overflow=False)))
-            # 박수 임계값: 소음 대비 충분히 크고, 절대값도 어느 정도 이상
-            threshold = max(ambient * 6.0, 3000.0)
+            pa = pyaudio.PyAudio()
+            stream = pa.open(format=pyaudio.paInt16, channels=1, rate=RATE,
+                             input=True, frames_per_buffer=CHUNK)
+        except Exception as exc:
+            print(f"[voice] 마이크를 열 수 없습니다: {exc}")
+            print("   → macOS: 시스템 설정 → 개인정보 보호 및 보안 → 마이크 에서 터미널 권한을 켜세요.")
+            print("   → 우선 호출어로 대체합니다.")
+            return bool(self.listen("🎤 '자비스'라고 불러주세요..."))
 
-            print("👏 박수를 치면 자비스가 깨어납니다... (Ctrl+C로 종료)")
+        try:
+            # 주변 소음 기준선: 평균으로 계산해야 한 번의 잡음에 흔들리지 않음
+            samples = [_rms(stream.read(CHUNK, exception_on_overflow=False)) for _ in range(8)]
+            ambient = sum(samples) / len(samples)
+            # 임계값: 소음 대비 6배 + 절대 하한. .env로 직접 조정 가능.
+            env_thr = os.getenv("JARVIS_CLAP_THRESHOLD")
+            mult = float(os.getenv("JARVIS_CLAP_MULT", "6") or 6)
+            threshold = float(env_thr) if env_thr else max(ambient * mult, 2000.0)
+
+            if ambient == 0:
+                print("⚠️  마이크 음량이 0입니다 — 소리가 안 들어옵니다.")
+                print("   macOS: 시스템 설정 → 개인정보 보호 및 보안 → 마이크 에서 터미널 권한을 켜고")
+                print("   터미널을 완전히 종료한 뒤 다시 실행하세요. (또는 python clap_test.py 로 진단)")
+
+            print(f"👏 박수를 치면 자비스가 깨어납니다... (임계값 {threshold:.0f}, Ctrl+C로 종료)")
             quiet_seen = True
             while True:
                 level = _rms(stream.read(CHUNK, exception_on_overflow=False))
