@@ -1,0 +1,13 @@
+# 자비스(JARVIS) 음성 비서 의존성
+# 음성 인식 (STT)
+SpeechRecognition>=3.10.0
+# 마이크 입력 (PyAudio 설치가 어려우면 sounddevice 사용 가능)
+PyAudio>=0.2.13
+# 음성 합성 (TTS) - 오프라인, 크로스플랫폼
+pyttsx3>=2.90
+# LLM 두뇌 - Claude API
+anthropic>=0.40.0
+# 환경변수(.env) 로딩
+python-dotenv>=1.0.0
+# 날씨/뉴스 등 외부 API 호출용
+requests>=2.31.0
