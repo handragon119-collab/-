@@ -1,14 +1,15 @@
 """글 생성 → 게시 → 기록까지 한 번의 실행 흐름을 담당합니다."""
 
 import json
+import time
 from datetime import datetime
-from pathlib import Path
 
 import config
+from threads_auto import safety
 from threads_auto.content_generator import ContentGenerator
 from threads_auto.threads_client import ThreadsClient
 
-LOG_PATH = Path("data/posted_log.jsonl")
+LOG_PATH = safety.LOG_PATH
 
 
 def _log_post(record: dict) -> None:
@@ -16,6 +17,23 @@ def _log_post(record: dict) -> None:
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _generate_unique(generator: ContentGenerator, max_tries: int = 3) -> tuple[str, str | None]:
+    """중복(유사) 글을 피해 최대 max_tries번 재생성합니다."""
+    body, topic = generator.generate_from_random_topic()
+    for attempt in range(max_tries):
+        dup, sim = safety.is_duplicate(
+            body,
+            config.DUPLICATE_SIMILARITY_THRESHOLD,
+            config.DUPLICATE_LOOKBACK,
+        )
+        if not dup:
+            return body, topic
+        print(f"  ↻ 최근 글과 유사({sim:.0%}) → 재생성 ({attempt + 1}/{max_tries})")
+        body, topic = generator.generate_from_random_topic()
+    print("  ⚠️ 유사 글이 계속 생성됨. 마지막 결과로 진행합니다.")
+    return body, topic
 
 
 def run_once(text: str | None = None, dry_run: bool = False) -> None:
@@ -40,13 +58,25 @@ def run_once(text: str | None = None, dry_run: bool = False) -> None:
         client = ThreadsClient(config.THREADS_USER_ID, config.THREADS_ACCESS_TOKEN)
 
     for i in range(posts):
+        # ── 안전장치 ①: 일일 게시 한도 가드 (실제 게시 시에만) ──
+        if not dry_run:
+            ok, posted = safety.check_daily_limit(config.DAILY_POST_LIMIT)
+            if not ok:
+                print(
+                    f"🛑 최근 24시간 게시 수 {posted}개가 한도({config.DAILY_POST_LIMIT})에 "
+                    "도달해 중단합니다. (API rate limit·스팸 탐지 보호)"
+                )
+                return
+
+        # ── 글 준비: 직접 입력 글 또는 AI 생성(중복 회피) ──
         if text is not None:
             body, topic = text, None
         else:
-            body, topic = generator.generate_from_random_topic()
+            body, topic = _generate_unique(generator)
 
         print("\n" + "=" * 50)
         print(f"[{i + 1}/{posts}] 생성된 글" + (f" (주제: {topic})" if topic else ""))
+        print(f"길이: {len(body)}자")
         print("-" * 50)
         print(body)
         print("=" * 50)
@@ -65,3 +95,8 @@ def run_once(text: str | None = None, dry_run: bool = False) -> None:
                 "post_id": post_id,
             }
         )
+
+        # ── 안전장치 ②: 글 사이 최소 간격 (봇 패턴 회피) ──
+        if i < posts - 1 and config.MIN_POST_INTERVAL_SECONDS > 0:
+            print(f"  ⏳ 다음 글까지 {config.MIN_POST_INTERVAL_SECONDS}초 대기")
+            time.sleep(config.MIN_POST_INTERVAL_SECONDS)

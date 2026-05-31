@@ -33,6 +33,20 @@ POSTS_PER_RUN = int(os.getenv("POSTS_PER_RUN", "1"))
 SCHEDULE_CRON = os.getenv("SCHEDULE_CRON", "0 9 * * *").strip()
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Seoul").strip()
 
+# ===== 안전장치 (밴·노출제한 위험 완화) =====
+# 24시간 내 최대 게시 수. 공식 한도(약 250개)보다 낮게 잡아 여유를 둡니다.
+DAILY_POST_LIMIT = int(os.getenv("DAILY_POST_LIMIT", "200"))
+# 한 번 실행에서 여러 글을 올릴 때 글 사이 최소 대기(초). 봇처럼 보이지 않게.
+MIN_POST_INTERVAL_SECONDS = int(os.getenv("MIN_POST_INTERVAL_SECONDS", "60"))
+# 스케줄 실행 시각에 더할 랜덤 지터(분). 매일 같은 초에 올리는 패턴을 피합니다.
+SCHEDULE_JITTER_MINUTES = int(os.getenv("SCHEDULE_JITTER_MINUTES", "20"))
+# 최근 글과 이 비율 이상 유사하면 중복으로 보고 재생성/차단합니다 (0~1).
+DUPLICATE_SIMILARITY_THRESHOLD = float(
+    os.getenv("DUPLICATE_SIMILARITY_THRESHOLD", "0.8")
+)
+# 중복 검사 시 비교할 최근 글 개수.
+DUPLICATE_LOOKBACK = int(os.getenv("DUPLICATE_LOOKBACK", "30"))
+
 
 def require_threads() -> None:
     """Threads 게시에 필요한 값이 있는지 확인합니다."""
