@@ -83,9 +83,17 @@
   <!-- 글쓰기 -->
   <div class="panel active" id="panel-write">
     <div class="card">
-      <label>주제 (비워두면 무작위로 자동 선택)</label>
+      <label>카테고리 선택</label>
+      <select id="catSelect" style="width:100%;padding:12px;border-radius:10px;border:1px solid #d4d4d8;font-size:15px">
+        <option value="">전체(랜덤)</option>
+      </select>
+      <button class="primary" id="autoBtn" style="margin-top:12px">🎲 이 카테고리로 자동 생성 (글 + 사진)</button>
+      <p class="hint">버튼을 누르면 그 카테고리에서 주제를 자동으로 골라 글과 사진을 한 번에 만들어요. (사진은 키가 있을 때만)</p>
+
+      <div style="border-top:1px solid #eee;margin:18px 0 4px"></div>
+      <label>또는 직접 주제 입력 (비우면 무작위)</label>
       <input type="text" id="topicInput" placeholder="예: 오늘의 작은 습관" />
-      <button class="primary" id="genBtn" style="margin-top:12px">✨ AI로 글 생성</button>
+      <button class="ghost" id="genBtn" style="margin-top:12px">✨ 글만 생성</button>
 
       <label style="margin-top:20px">생성된 글 (수정 가능)</label>
       <textarea id="postText" placeholder="여기에 AI가 만든 글이 나옵니다. 직접 써도 됩니다."></textarea>
@@ -203,6 +211,47 @@ $("postText").addEventListener("input", () => {
   $("charCount").textContent = $("postText").value.length;
 });
 
+// 카테고리 목록 불러오기
+async function loadCategories() {
+  try {
+    const r = await api("/api/categories");
+    if (r.ok) {
+      const sel = $("catSelect");
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">전체(랜덤)</option>' +
+        r.categories.map((c) => `<option value="${c}">${c}</option>`).join("");
+      sel.value = cur;
+    }
+  } catch (e) {}
+}
+
+// 🎲 자동 생성 (글 + 사진 한 번에)
+$("autoBtn").onclick = async () => {
+  const btn = $("autoBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 자동 생성 중… (사진 포함 20~40초)';
+  CUR_IMAGE = null; $("imgPreview").style.display = "none";
+  try {
+    const r = await api("/api/auto", { method: "POST", body: JSON.stringify({ category: $("catSelect").value, with_image: true }) });
+    if (r.ok) {
+      $("postText").value = r.text;
+      $("charCount").textContent = r.text.length;
+      if (r.image_url) {
+        CUR_IMAGE = r.image_url;
+        $("imgEl").src = r.image_url;
+        $("imgPreview").style.display = "block";
+        toast("글과 사진이 만들어졌어요. 확인 후 게시하세요.", "ok");
+      } else if (r.image_error) {
+        toast("글은 됐지만 사진 실패: " + r.image_error, "error");
+      } else {
+        toast("글이 생성됐어요. (사진 기능은 키가 없어 건너뜀)", "ok");
+      }
+    } else toast(r.error || "자동 생성 실패", "error");
+  } catch (e) { toast("자동 생성 오류: " + e, "error"); }
+  btn.disabled = false;
+  btn.textContent = "🎲 이 카테고리로 자동 생성 (글 + 사진)";
+};
+
 // 생성
 $("genBtn").onclick = async () => {
   const btn = $("genBtn");
@@ -281,6 +330,7 @@ async function loadTopics() {
 $("saveTopicsBtn").onclick = async () => {
   const r = await api("/api/topics", { method: "POST", body: JSON.stringify({ content: $("topicsArea").value }) });
   toast(r.ok ? "저장됐어요." : "저장 실패", r.ok ? "ok" : "error");
+  if (r.ok) loadCategories();  // 카테고리 갱신
 };
 
 // 스케줄
@@ -309,6 +359,7 @@ async function loadHistory() {
 $("refreshHistBtn").onclick = loadHistory;
 
 loadStatus();
+loadCategories();
 setInterval(loadStatus, 15000);
 </script>
 </body>

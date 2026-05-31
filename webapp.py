@@ -17,7 +17,10 @@ from flask import Flask, jsonify, render_template, request
 
 import config
 from threads_auto import safety
-from threads_auto.content_generator import ContentGenerator
+from threads_auto.content_generator import (
+    ContentGenerator,
+    load_categorized_topics,
+)
 from threads_auto.threads_client import ThreadsClient, ThreadsError
 from threads_auto.image_generator import ImageError, create_image_url_auto
 
@@ -98,9 +101,16 @@ def api_status():
     )
 
 
+@app.get("/api/categories")
+def api_categories():
+    """주제 카테고리 목록을 반환합니다."""
+    cats = load_categorized_topics()
+    return jsonify({"ok": True, "categories": list(cats.keys())})
+
+
 @app.post("/api/generate")
 def api_generate():
-    """AI로 글을 생성합니다(게시 안 함)."""
+    """AI로 글을 생성합니다(게시 안 함). topic 또는 category로 주제 지정 가능."""
     try:
         config.require_anthropic()
     except RuntimeError as exc:
@@ -108,6 +118,7 @@ def api_generate():
 
     data = request.get_json(silent=True) or {}
     topic = (data.get("topic") or "").strip() or None
+    category = (data.get("category") or "").strip() or None
     try:
         gen = ContentGenerator(
             api_key=config.ANTHROPIC_API_KEY,
@@ -116,11 +127,65 @@ def api_generate():
         )
         if topic:
             text = gen.generate(topic)
+        elif category:
+            text, topic = gen.generate_from_category(category)
         else:
             text, topic = gen.generate_from_random_topic()
         return jsonify({"ok": True, "text": text, "topic": topic, "length": len(text)})
     except Exception as exc:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
+
+
+@app.post("/api/auto")
+def api_auto():
+    """카테고리에서 주제 자동 선택 → 글 생성 → (가능하면) 사진까지 한 번에.
+
+    반환: {text, topic, image_url(없으면 null), image_error(있으면 사유)}
+    """
+    try:
+        config.require_anthropic()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    data = request.get_json(silent=True) or {}
+    category = (data.get("category") or "").strip() or None
+    want_image = bool(data.get("with_image", True))
+
+    gen = ContentGenerator(
+        api_key=config.ANTHROPIC_API_KEY,
+        model=config.CLAUDE_MODEL,
+        persona=config.THREADS_PERSONA,
+    )
+    try:
+        text, topic = gen.generate_from_category(category)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
+
+    image_url = None
+    image_error = None
+    if want_image and config.has_image_support():
+        try:
+            prompt = gen.generate_image_prompt(text)
+            image_url = create_image_url_auto(
+                config.OPENAI_API_KEY,
+                config.IMGUR_CLIENT_ID,
+                prompt,
+                model=config.OPENAI_IMAGE_MODEL,
+                size=config.OPENAI_IMAGE_SIZE,
+            )
+        except Exception as exc:  # noqa: BLE001  (사진 실패해도 글은 살림)
+            image_error = str(exc)
+
+    return jsonify(
+        {
+            "ok": True,
+            "text": text,
+            "topic": topic,
+            "length": len(text),
+            "image_url": image_url,
+            "image_error": image_error,
+        }
+    )
 
 
 @app.post("/api/generate_image")
