@@ -1,0 +1,14 @@
+# 환경 변수 (절대 커밋 금지 - API 키 포함)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 게시 기록/로그
+data/posted_log.jsonl
+*.log
