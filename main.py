@@ -4,6 +4,7 @@
   python main.py post                 # AI가 글 생성 후 1회 게시
   python main.py post --dry-run       # 게시 없이 생성 결과만 미리보기
   python main.py post --text "직접 쓴 글"   # 입력한 글을 그대로 게시
+  python main.py post --with-image    # 글 + AI 생성 이미지 함께 게시
   python main.py schedule             # 스케줄에 따라 자동 반복 게시
 """
 
@@ -22,6 +23,7 @@ def main() -> None:
     p_post = sub.add_parser("post", help="한 번 실행: 글 생성 후 게시")
     p_post.add_argument("--text", default=None, help="이 텍스트를 그대로 게시 (생략 시 AI 생성)")
     p_post.add_argument("--dry-run", action="store_true", help="실제 게시 없이 생성 결과만 출력")
+    p_post.add_argument("--with-image", action="store_true", help="AI로 이미지를 생성해 함께 게시")
 
     sub.add_parser("schedule", help="스케줄에 따라 자동 반복 게시")
 
@@ -29,7 +31,7 @@ def main() -> None:
 
     try:
         if args.command == "post":
-            run_once(text=args.text, dry_run=args.dry_run)
+            run_once(text=args.text, dry_run=args.dry_run, with_image=args.with_image)
         elif args.command == "schedule":
             scheduler.start()
     except (RuntimeError, ThreadsError) as exc:

@@ -19,6 +19,7 @@ import config
 from threads_auto import safety
 from threads_auto.content_generator import ContentGenerator
 from threads_auto.threads_client import ThreadsClient, ThreadsError
+from threads_auto.image_generator import ImageError, create_image_url
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -84,6 +85,7 @@ def api_status():
         {
             "has_anthropic": bool(config.ANTHROPIC_API_KEY),
             "has_threads": bool(config.THREADS_USER_ID and config.THREADS_ACCESS_TOKEN),
+            "has_image": config.has_image_support(),
             "model": config.CLAUDE_MODEL,
             "posted_24h": posted,
             "daily_limit": config.DAILY_POST_LIMIT,
@@ -121,9 +123,44 @@ def api_generate():
         return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
 
 
+@app.post("/api/generate_image")
+def api_generate_image():
+    """글 내용에 어울리는 이미지를 AI로 생성해 미리보기용 URL을 반환합니다."""
+    try:
+        config.require_anthropic()
+        config.require_image()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "이미지를 만들 글이 비어 있습니다."}), 400
+
+    try:
+        gen = ContentGenerator(
+            api_key=config.ANTHROPIC_API_KEY,
+            model=config.CLAUDE_MODEL,
+            persona=config.THREADS_PERSONA,
+        )
+        prompt = gen.generate_image_prompt(text)
+        image_url = create_image_url(
+            config.OPENAI_API_KEY,
+            config.IMGUR_CLIENT_ID,
+            prompt,
+            model=config.OPENAI_IMAGE_MODEL,
+            size=config.OPENAI_IMAGE_SIZE,
+        )
+        return jsonify({"ok": True, "image_url": image_url})
+    except ImageError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"이미지 생성 실패: {exc}"}), 500
+
+
 @app.post("/api/post")
 def api_post():
-    """입력된 글을 스레드에 게시합니다."""
+    """입력된 글을 스레드에 게시합니다. image_url이 있으면 이미지와 함께 게시합니다."""
     try:
         config.require_threads()
     except RuntimeError as exc:
@@ -131,6 +168,7 @@ def api_post():
 
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
+    image_url = (data.get("image_url") or "").strip() or None
     if not text:
         return jsonify({"ok": False, "error": "게시할 글이 비어 있습니다."}), 400
     if len(text) > 500:
@@ -150,7 +188,10 @@ def api_post():
 
     try:
         client = ThreadsClient(config.THREADS_USER_ID, config.THREADS_ACCESS_TOKEN)
-        post_id = client.post_text(text)
+        if image_url:
+            post_id = client.post_image(text, image_url)
+        else:
+            post_id = client.post_text(text)
     except ThreadsError as exc:
         return jsonify({"ok": False, "error": f"게시 실패: {exc}"}), 502
 
@@ -160,6 +201,7 @@ def api_post():
         "topic": data.get("topic"),
         "text": text,
         "post_id": post_id,
+        "image_url": image_url,
     }
     with LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")

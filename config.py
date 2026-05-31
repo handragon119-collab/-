@@ -47,6 +47,27 @@ DUPLICATE_SIMILARITY_THRESHOLD = float(
 # 중복 검사 시 비교할 최근 글 개수.
 DUPLICATE_LOOKBACK = int(os.getenv("DUPLICATE_LOOKBACK", "30"))
 
+# ===== 이미지 자동 생성 (선택) =====
+# OpenAI 이미지 생성 API 키 (Claude는 이미지 생성 불가 → 별도 서비스)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+# 이미지 생성 모델
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
+# 이미지 크기
+OPENAI_IMAGE_SIZE = os.getenv("OPENAI_IMAGE_SIZE", "1024x1024").strip()
+# Imgur 익명 업로드용 Client-ID (생성한 이미지를 공개 URL로 호스팅)
+IMGUR_CLIENT_ID = os.getenv("IMGUR_CLIENT_ID", "").strip()
+
+
+def require_image() -> None:
+    """이미지 자동 생성에 필요한 값이 있는지 확인합니다."""
+    _require("OPENAI_API_KEY")
+    _require("IMGUR_CLIENT_ID")
+
+
+def has_image_support() -> bool:
+    """이미지 생성 키가 모두 설정돼 있는지 여부."""
+    return bool(OPENAI_API_KEY and IMGUR_CLIENT_ID)
+
 
 def require_threads() -> None:
     """Threads 게시에 필요한 값이 있는지 확인합니다."""

@@ -79,3 +79,24 @@ class ContentGenerator:
         topics = load_topics(topics_path)
         topic = random.choice(topics) if topics else None
         return self.generate(topic), topic
+
+    def generate_image_prompt(self, post_text: str) -> str:
+        """게시글 내용에 어울리는 이미지 생성용 프롬프트(영어)를 만듭니다."""
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=300,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "다음 SNS 게시글에 어울리는 사진/일러스트 한 장을 만들기 위한 "
+                        "이미지 생성 프롬프트를 영어로 한 문단 써줘. 사람 얼굴이나 글자가 "
+                        "들어가지 않는, 분위기 위주의 깔끔한 이미지로. 설명 없이 프롬프트만 출력:\n\n"
+                        + post_text
+                    ),
+                }
+            ],
+        )
+        return "".join(
+            block.text for block in response.content if block.type == "text"
+        ).strip()

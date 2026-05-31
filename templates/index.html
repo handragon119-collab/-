@@ -91,6 +91,18 @@
       <textarea id="postText" placeholder="여기에 AI가 만든 글이 나옵니다. 직접 써도 됩니다."></textarea>
       <div class="count"><span id="charCount">0</span> / 500자</div>
 
+      <div id="imageBox" style="margin-top:14px; display:none">
+        <button class="ghost" id="genImgBtn">🎨 글에 어울리는 사진 AI로 만들기</button>
+        <div id="imgPreview" style="margin-top:10px; display:none">
+          <img id="imgEl" style="width:100%; border-radius:10px;" alt="생성된 이미지" />
+          <div class="row">
+            <button class="ghost" id="removeImgBtn">🗑 사진 빼기</button>
+            <button class="ghost" id="regenImgBtn">🔄 다시 만들기</button>
+          </div>
+        </div>
+        <p class="hint" id="imgHint">사진은 선택이에요. 글만 올려도 됩니다. (사진 생성은 OpenAI·Imgur 키가 필요해요)</p>
+      </div>
+
       <button class="primary" id="postBtn" style="margin-top:8px">🚀 스레드에 게시</button>
       <p class="hint">먼저 'AI로 글 생성'으로 글을 만든 뒤 확인하고 게시하세요. 직접 작성해서 게시할 수도 있습니다.</p>
     </div>
@@ -163,6 +175,7 @@ document.querySelectorAll(".tab").forEach((b) => {
   };
 });
 
+let HAS_IMAGE = false;
 // 상태 표시
 async function loadStatus() {
   try {
@@ -172,6 +185,11 @@ async function loadStatus() {
     parts.push(s.has_anthropic ? "AI ✅" : "AI ❌");
     parts.push(`오늘 ${s.posted_24h}/${s.daily_limit}`);
     $("status").textContent = parts.join(" · ");
+    // 이미지 기능: 키가 있으면 버튼 노출
+    HAS_IMAGE = s.has_image;
+    $("imageBox").style.display = "block";
+    $("genImgBtn").style.display = HAS_IMAGE ? "block" : "none";
+    if (!HAS_IMAGE) $("imgHint").textContent = "사진 기능을 쓰려면 .env에 OPENAI_API_KEY와 IMGUR_CLIENT_ID를 넣으세요. (글만 올리려면 무시해도 됩니다)";
     // 스케줄 표시
     $("schedBadge").textContent = s.schedule_running ? "켜짐" : "꺼짐";
     $("schedBadge").className = "badge " + (s.schedule_running ? "on" : "off");
@@ -195,6 +213,7 @@ $("genBtn").onclick = async () => {
     if (r.ok) {
       $("postText").value = r.text;
       $("charCount").textContent = r.text.length;
+      CUR_IMAGE = null; $("imgPreview").style.display = "none";  // 새 글이면 기존 사진 초기화
       toast("글이 생성됐어요. 확인 후 게시하세요.", "ok");
     } else toast(r.error || "생성 실패", "error");
   } catch (e) { toast("생성 중 오류: " + e, "error"); }
@@ -202,18 +221,53 @@ $("genBtn").onclick = async () => {
   btn.textContent = "✨ AI로 글 생성";
 };
 
+// 현재 첨부된 이미지 URL (없으면 null)
+let CUR_IMAGE = null;
+
+// 이미지 생성
+async function makeImage() {
+  const text = $("postText").value.trim();
+  if (!text) return toast("먼저 글을 만들거나 입력해주세요.", "error");
+  const btn = $("genImgBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 사진 만드는 중… (20~40초)';
+  try {
+    const r = await api("/api/generate_image", { method: "POST", body: JSON.stringify({ text }) });
+    if (r.ok) {
+      CUR_IMAGE = r.image_url;
+      $("imgEl").src = r.image_url;
+      $("imgPreview").style.display = "block";
+      toast("사진이 만들어졌어요.", "ok");
+    } else toast(r.error || "사진 생성 실패", "error");
+  } catch (e) { toast("사진 생성 오류: " + e, "error"); }
+  btn.disabled = false;
+  btn.textContent = "🎨 글에 어울리는 사진 AI로 만들기";
+}
+$("genImgBtn").onclick = makeImage;
+$("regenImgBtn").onclick = makeImage;
+$("removeImgBtn").onclick = () => {
+  CUR_IMAGE = null;
+  $("imgPreview").style.display = "none";
+  toast("사진을 뺐어요. 글만 게시됩니다.");
+};
+
 // 게시
 $("postBtn").onclick = async () => {
   const text = $("postText").value.trim();
   if (!text) return toast("게시할 글이 비어 있어요.", "error");
-  if (!confirm("이 글을 스레드에 실제로 게시할까요?")) return;
+  const withImg = CUR_IMAGE ? " (사진 포함)" : "";
+  if (!confirm("이 글을" + withImg + " 스레드에 실제로 게시할까요?")) return;
   const btn = $("postBtn");
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span> 게시 중…';
   try {
-    const r = await api("/api/post", { method: "POST", body: JSON.stringify({ text, topic: $("topicInput").value || null }) });
-    if (r.ok) { toast("✅ 게시 완료!", "ok"); $("postText").value = ""; $("charCount").textContent = 0; loadStatus(); }
-    else toast(r.error || "게시 실패", "error");
+    const r = await api("/api/post", { method: "POST", body: JSON.stringify({ text, image_url: CUR_IMAGE, topic: $("topicInput").value || null }) });
+    if (r.ok) {
+      toast("✅ 게시 완료!", "ok");
+      $("postText").value = ""; $("charCount").textContent = 0;
+      CUR_IMAGE = null; $("imgPreview").style.display = "none";
+      loadStatus();
+    } else toast(r.error || "게시 실패", "error");
   } catch (e) { toast("게시 중 오류: " + e, "error"); }
   btn.disabled = false;
   btn.textContent = "🚀 스레드에 게시";

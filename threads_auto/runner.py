@@ -10,6 +10,7 @@ import config
 from threads_auto import safety
 from threads_auto.content_generator import ContentGenerator
 from threads_auto.threads_client import ThreadsClient
+from threads_auto.image_generator import ImageError, create_image_url
 
 LOG_PATH = safety.LOG_PATH
 
@@ -38,13 +39,17 @@ def _generate_unique(generator: ContentGenerator, max_tries: int = 3) -> tuple[s
     return body, topic
 
 
-def run_once(text: str | None = None, dry_run: bool = False) -> None:
+def run_once(text: str | None = None, dry_run: bool = False,
+             with_image: bool = False) -> None:
     """한 번 실행: 글을 만들고(또는 받은 글로) 스레드에 게시합니다.
 
     text가 주어지면 그 글을 그대로 게시하고, 없으면 AI가 생성합니다.
     dry_run=True면 실제 게시 없이 생성 결과만 출력합니다.
+    with_image=True면 글에 어울리는 이미지를 AI로 생성해 함께 게시합니다.
     """
     config.require_anthropic()
+    if with_image and not dry_run:
+        config.require_image()
 
     generator = ContentGenerator(
         api_key=config.ANTHROPIC_API_KEY,
@@ -87,7 +92,28 @@ def run_once(text: str | None = None, dry_run: bool = False) -> None:
             print("dry-run 모드: 실제 게시는 하지 않았습니다.")
             continue
 
-        post_id = client.post_text(body)
+        # ── 이미지 생성(선택) ──
+        image_url = None
+        if with_image:
+            try:
+                print("  🎨 이미지 생성 중…")
+                prompt = generator.generate_image_prompt(body)
+                image_url = create_image_url(
+                    config.OPENAI_API_KEY,
+                    config.IMGUR_CLIENT_ID,
+                    prompt,
+                    model=config.OPENAI_IMAGE_MODEL,
+                    size=config.OPENAI_IMAGE_SIZE,
+                )
+                print(f"  🖼️ 이미지 준비 완료: {image_url}")
+            except ImageError as exc:
+                print(f"  ⚠️ 이미지 생성 실패 → 글만 게시합니다. ({exc})")
+                image_url = None
+
+        if image_url:
+            post_id = client.post_image(body, image_url)
+        else:
+            post_id = client.post_text(body)
         print(f"✅ 게시 완료! post_id={post_id}")
         _log_post(
             {
@@ -95,6 +121,7 @@ def run_once(text: str | None = None, dry_run: bool = False) -> None:
                 "topic": topic,
                 "text": body,
                 "post_id": post_id,
+                "image_url": image_url,
             }
         )
 
