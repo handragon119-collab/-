@@ -99,7 +99,7 @@
       <label style="margin-top:16px">③ 만들기</label>
       <button class="primary" id="autoBtn">🎲 글 + 사진 한 번에 자동 생성</button>
       <button class="ghost" id="genBtn" style="margin-top:8px">✨ 글만 생성</button>
-      <p class="hint">🧠 고급 모드: 리서치 → 차별화 전략 → 민감주제 점검 → (필요시) 기관 출처 팩트체크 → 한국 스레드 반말 문체로 작성합니다. 품질이 높은 대신 30~70초 걸려요.</p>
+      <p class="hint">🧠 '글 + 사진 한 번에'를 누르면 글과 사진이 <b>함께 미리보기</b>로 떠요. 확인 후 게시하면 됩니다. (리서치·팩트체크 포함, 40~80초)</p>
 
       <label style="margin-top:20px">생성된 글 (수정 가능)</label>
       <textarea id="postText" placeholder="여기에 AI가 만든 글이 나옵니다. 직접 써도 됩니다."></textarea>
@@ -273,6 +273,8 @@ $("autoBtn").onclick = async () => {
       } else {
         toast("글이 생성됐어요. (사진 기능은 키가 없어 건너뜀)", "ok");
       }
+      // 생성 결과(글 + 사진)가 바로 보이도록 그 위치로 스크롤
+      (r.image_url ? $("imgPreview") : $("postText")).scrollIntoView({ behavior: "smooth", block: "center" });
     } else toast(r.error || "자동 생성 실패", "error");
   } catch (e) { toast("자동 생성 오류: " + e, "error"); }
   btn.disabled = false;
