@@ -108,6 +108,23 @@ def api_categories():
     return jsonify({"ok": True, "categories": list(cats.keys())})
 
 
+@app.post("/api/random_topic")
+def api_random_topic():
+    """선택한 카테고리에서 주제 하나를 무작위로 골라 반환합니다(글 생성 안 함)."""
+    import random
+
+    data = request.get_json(silent=True) or {}
+    category = (data.get("category") or "").strip() or None
+    cats = load_categorized_topics()
+    if category and category in cats:
+        pool = cats[category]
+    else:
+        pool = [t for items in cats.values() for t in items]
+    if not pool:
+        return jsonify({"ok": False, "error": "주제가 없습니다. 📋 주제 탭에서 추가하세요."}), 400
+    return jsonify({"ok": True, "topic": random.choice(pool), "category": category})
+
+
 @app.post("/api/generate")
 def api_generate():
     """AI로 글을 생성합니다(게시 안 함). topic 또는 category로 주제 지정 가능."""
@@ -149,6 +166,7 @@ def api_auto():
 
     data = request.get_json(silent=True) or {}
     category = (data.get("category") or "").strip() or None
+    topic = (data.get("topic") or "").strip() or None
     want_image = bool(data.get("with_image", True))
 
     gen = ContentGenerator(
@@ -157,7 +175,10 @@ def api_auto():
         persona=config.THREADS_PERSONA,
     )
     try:
-        text, topic = gen.generate_from_category(category)
+        if topic:
+            text = gen.generate(topic)
+        else:
+            text, topic = gen.generate_from_category(category)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
 

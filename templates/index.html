@@ -44,6 +44,12 @@
   .row { display: flex; gap: 10px; margin-top: 12px; }
   .row > * { flex: 1; }
   .hint { font-size: 12px; color: #888; margin-top: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip-cat {
+    padding: 9px 14px; border-radius: 20px; border: 1px solid #d4d4d8;
+    background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #333;
+  }
+  .chip-cat.sel { background: #e8590c; border-color: #e8590c; color: #fff; }
   .count { font-size: 12px; color: #888; text-align: right; margin-top: 4px; }
   .toast {
     position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
@@ -83,17 +89,17 @@
   <!-- 글쓰기 -->
   <div class="panel active" id="panel-write">
     <div class="card">
-      <label>카테고리 선택</label>
-      <select id="catSelect" style="width:100%;padding:12px;border-radius:10px;border:1px solid #d4d4d8;font-size:15px">
-        <option value="">전체(랜덤)</option>
-      </select>
-      <button class="primary" id="autoBtn" style="margin-top:12px">🎲 이 카테고리로 자동 생성 (글 + 사진)</button>
-      <p class="hint">버튼을 누르면 그 카테고리에서 주제를 자동으로 골라 글과 사진을 한 번에 만들어요. (사진은 키가 있을 때만)</p>
+      <label>① 카테고리 선택 (클릭)</label>
+      <div id="catChips" class="chips"></div>
 
-      <div style="border-top:1px solid #eee;margin:18px 0 4px"></div>
-      <label>또는 직접 주제 입력 (비우면 무작위)</label>
-      <input type="text" id="topicInput" placeholder="예: 오늘의 작은 습관" />
-      <button class="ghost" id="genBtn" style="margin-top:12px">✨ 글만 생성</button>
+      <label style="margin-top:16px">② 주제 (자동 또는 직접 입력)</label>
+      <input type="text" id="topicInput" placeholder="아래 '자동 주제 설정'을 누르거나 직접 입력" />
+      <button class="ghost" id="randTopicBtn" style="margin-top:8px">🎯 자동 주제 설정 (랜덤)</button>
+
+      <label style="margin-top:16px">③ 만들기</label>
+      <button class="primary" id="autoBtn">🎲 글 + 사진 한 번에 자동 생성</button>
+      <button class="ghost" id="genBtn" style="margin-top:8px">✨ 글만 생성</button>
+      <p class="hint">카테고리를 누르면 주황색으로 선택돼요. '자동 주제 설정'으로 주제를 뽑은 뒤 만들거나, 곧바로 '글+사진 자동 생성'을 눌러도 돼요.</p>
 
       <label style="margin-top:20px">생성된 글 (수정 가능)</label>
       <textarea id="postText" placeholder="여기에 AI가 만든 글이 나옵니다. 직접 써도 됩니다."></textarea>
@@ -211,19 +217,39 @@ $("postText").addEventListener("input", () => {
   $("charCount").textContent = $("postText").value.length;
 });
 
-// 카테고리 목록 불러오기
+// 선택된 카테고리 (없으면 전체 랜덤)
+let SEL_CAT = "";
+
+// 카테고리 칩 렌더링
 async function loadCategories() {
   try {
     const r = await api("/api/categories");
-    if (r.ok) {
-      const sel = $("catSelect");
-      const cur = sel.value;
-      sel.innerHTML = '<option value="">전체(랜덤)</option>' +
-        r.categories.map((c) => `<option value="${c}">${c}</option>`).join("");
-      sel.value = cur;
-    }
+    if (!r.ok) return;
+    const box = $("catChips");
+    const cats = ["전체(랜덤)"].concat(r.categories);
+    box.innerHTML = cats.map((c) => {
+      const val = (c === "전체(랜덤)") ? "" : c;
+      const sel = (val === SEL_CAT) ? " sel" : "";
+      return `<span class="chip-cat${sel}" data-cat="${val}">${c}</span>`;
+    }).join("");
+    box.querySelectorAll(".chip-cat").forEach((el) => {
+      el.onclick = () => {
+        SEL_CAT = el.dataset.cat;
+        box.querySelectorAll(".chip-cat").forEach((x) => x.classList.remove("sel"));
+        el.classList.add("sel");
+      };
+    });
   } catch (e) {}
 }
+
+// 🎯 자동 주제 설정 (랜덤으로 주제 하나 뽑아 입력칸에 채움)
+$("randTopicBtn").onclick = async () => {
+  try {
+    const r = await api("/api/random_topic", { method: "POST", body: JSON.stringify({ category: SEL_CAT }) });
+    if (r.ok) { $("topicInput").value = r.topic; toast("주제: " + r.topic, "ok"); }
+    else toast(r.error || "주제 설정 실패", "error");
+  } catch (e) { toast("오류: " + e, "error"); }
+};
 
 // 🎲 자동 생성 (글 + 사진 한 번에)
 $("autoBtn").onclick = async () => {
@@ -232,10 +258,11 @@ $("autoBtn").onclick = async () => {
   btn.innerHTML = '<span class="spin"></span> 자동 생성 중… (사진 포함 20~40초)';
   CUR_IMAGE = null; $("imgPreview").style.display = "none";
   try {
-    const r = await api("/api/auto", { method: "POST", body: JSON.stringify({ category: $("catSelect").value, with_image: true }) });
+    const r = await api("/api/auto", { method: "POST", body: JSON.stringify({ category: SEL_CAT, topic: $("topicInput").value, with_image: true }) });
     if (r.ok) {
       $("postText").value = r.text;
       $("charCount").textContent = r.text.length;
+      if (r.topic) $("topicInput").value = r.topic;
       if (r.image_url) {
         CUR_IMAGE = r.image_url;
         $("imgEl").src = r.image_url;
@@ -249,7 +276,7 @@ $("autoBtn").onclick = async () => {
     } else toast(r.error || "자동 생성 실패", "error");
   } catch (e) { toast("자동 생성 오류: " + e, "error"); }
   btn.disabled = false;
-  btn.textContent = "🎲 이 카테고리로 자동 생성 (글 + 사진)";
+  btn.textContent = "🎲 글 + 사진 한 번에 자동 생성";
 };
 
 // 생성
@@ -258,10 +285,11 @@ $("genBtn").onclick = async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span> 생성 중… (10~20초)';
   try {
-    const r = await api("/api/generate", { method: "POST", body: JSON.stringify({ topic: $("topicInput").value }) });
+    const r = await api("/api/generate", { method: "POST", body: JSON.stringify({ topic: $("topicInput").value, category: SEL_CAT }) });
     if (r.ok) {
       $("postText").value = r.text;
       $("charCount").textContent = r.text.length;
+      if (r.topic) $("topicInput").value = r.topic;
       CUR_IMAGE = null; $("imgPreview").style.display = "none";  // 새 글이면 기존 사진 초기화
       toast("글이 생성됐어요. 확인 후 게시하세요.", "ok");
     } else toast(r.error || "생성 실패", "error");
