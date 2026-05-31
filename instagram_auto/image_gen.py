@@ -1,9 +1,10 @@
 """AI 이미지 생성 모듈 (제공자 플러그인 방식).
 
 지원 제공자:
-  - openai      : DALL·E 3 / gpt-image-1
-  - gemini      : Google Gemini 이미지 생성
-  - placeholder : API 키 없이도 동작하는 로컬 PIL 카드 (테스트/오프라인용)
+  - pollinations : 키 불필요, 완전 무료 (Flux/SD 기반)
+  - gemini       : Google Gemini 이미지 생성 (유료)
+  - openai       : DALL·E 3 / gpt-image-1 (유료)
+  - placeholder  : API 키 없이도 동작하는 로컬 PIL 카드 (테스트/오프라인용)
 """
 
 from __future__ import annotations
@@ -11,11 +12,20 @@ from __future__ import annotations
 import base64
 import os
 import textwrap
+import urllib.parse
 from pathlib import Path
 
 import requests
 
 from .config import Config
+
+# 비율 문자열 -> 픽셀 크기 (무료 제공자용)
+_ASPECT_SIZES = {
+    "1:1": (1024, 1024),
+    "4:5": (1024, 1280),
+    "9:16": (768, 1344),
+    "16:9": (1344, 768),
+}
 
 
 def generate_image(prompt: str, config: Config, out_path: str) -> str:
@@ -23,6 +33,8 @@ def generate_image(prompt: str, config: Config, out_path: str) -> str:
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     provider = config.image_provider
 
+    if provider == "pollinations":
+        return _pollinations(prompt, config, out_path)
     if provider == "openai":
         return _openai(prompt, config, out_path)
     if provider == "gemini":
@@ -30,6 +42,27 @@ def generate_image(prompt: str, config: Config, out_path: str) -> str:
     if provider == "placeholder":
         return _placeholder(prompt, out_path)
     raise RuntimeError(f"알 수 없는 IMAGE_PROVIDER: {provider}")
+
+
+# --------------------------------------------------------------------------- #
+# Pollinations.ai (무료, API 키 불필요)
+# --------------------------------------------------------------------------- #
+def _pollinations(prompt: str, config: Config, out_path: str) -> str:
+    width, height = _ASPECT_SIZES.get(config.image_aspect_ratio, (1024, 1024))
+    encoded = urllib.parse.quote(prompt)
+    url = (
+        f"https://image.pollinations.ai/prompt/{encoded}"
+        f"?width={width}&height={height}&nologo=true&model=flux"
+    )
+    headers = {}
+    if config.pollinations_token:  # 선택: 더 높은 한도를 위한 토큰
+        headers["Authorization"] = f"Bearer {config.pollinations_token}"
+    resp = requests.get(url, headers=headers, timeout=180)
+    resp.raise_for_status()
+    if not resp.content or b"<html" in resp.content[:200].lower():
+        raise RuntimeError("Pollinations 응답이 이미지가 아닙니다. 잠시 후 다시 시도하세요.")
+    _write_bytes(out_path, resp.content)
+    return out_path
 
 
 # --------------------------------------------------------------------------- #

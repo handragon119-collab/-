@@ -14,6 +14,27 @@
 - **일괄 처리**: 주제 목록 파일로 여러 게시물 한 번에 생성
 - **플러그인 구조**: 제공자/업로드/호스팅 방식을 환경변수만 바꿔 교체
 
+## 💸 무료로 쓰기 ($0 구성)
+
+돈이 드는 건 캡션(LLM)과 이미지 생성뿐이고, 둘 다 무료 대체가 가능합니다.
+
+| 단계 | 무료 서비스 | 비고 |
+|------|------------|------|
+| 캡션 생성 | **Gemini 2.5 Flash 무료 등급** | Google AI Studio 무료 키. 분당/일일 한도 있음 |
+| 이미지 생성 | **Pollinations.ai** | 무료. `auth.pollinations.ai`에서 무료 토큰 받으면 안정적(워터마크 제거) |
+| 이미지 호스팅 | imgbb | 무료 |
+| 업로드 | Graph API | 무료 |
+
+`.env`에서 무료 구성 `[A]` 블록의 주석을 해제하면 됩니다.
+
+```bash
+CAPTION_PROVIDER=gemini
+IMAGE_PROVIDER=pollinations
+POLLINATIONS_TOKEN=     # auth.pollinations.ai 에서 무료 발급 (권장)
+```
+
+> ⚠️ 무료 등급은 **속도·일일 한도 제한**이 있고, Pollinations는 익명 호출 시 403이 날 수 있어 **무료 토큰 발급을 권장**합니다. 완전히 안정적인 무제한 무료 이미지 API는 없으므로, 대량 운영 시엔 로컬 Stable Diffusion 또는 유료 API가 더 적합합니다.
+
 ## 🚀 빠른 시작
 
 ```bash

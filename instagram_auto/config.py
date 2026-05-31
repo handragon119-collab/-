@@ -21,10 +21,17 @@ def _get(name: str, default: str = "") -> str:
 class Config:
     """프로그램 전체 설정. 환경변수(.env)에서 로드된다."""
 
-    # 캡션(Claude)
+    # 캡션 생성 제공자: anthropic | gemini
+    caption_provider: str = field(
+        default_factory=lambda: _get("CAPTION_PROVIDER", "anthropic").lower()
+    )
     anthropic_api_key: str = field(default_factory=lambda: _get("ANTHROPIC_API_KEY"))
     caption_model: str = field(
         default_factory=lambda: _get("CAPTION_MODEL", "claude-sonnet-4-6")
+    )
+    # Gemini 캡션용 텍스트 모델 (무료 등급 가능)
+    gemini_text_model: str = field(
+        default_factory=lambda: _get("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
     )
 
     # 이미지 생성
@@ -42,6 +49,10 @@ class Config:
     # 인스타그램 피드 기본은 정사각형(1:1)
     image_aspect_ratio: str = field(
         default_factory=lambda: _get("IMAGE_ASPECT_RATIO", "1:1")
+    )
+    # Pollinations(무료) 선택적 토큰 - 없어도 동작
+    pollinations_token: str = field(
+        default_factory=lambda: _get("POLLINATIONS_TOKEN")
     )
 
     # 인스타그램 업로드

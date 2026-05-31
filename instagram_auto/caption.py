@@ -1,4 +1,9 @@
-"""Claude(Anthropic)를 이용한 인스타그램 캡션·해시태그·이미지 프롬프트 생성."""
+"""인스타그램 캡션·해시태그·이미지 프롬프트 생성.
+
+캡션 생성 제공자(CAPTION_PROVIDER):
+  - anthropic : Claude (유료, 고품질)
+  - gemini    : Gemini 2.5 Flash (무료 등급 가능)
+"""
 
 from __future__ import annotations
 
@@ -39,8 +44,27 @@ class CaptionResult:
 
 def generate_caption(topic: str, config: Config, tone: str = "친근하고 감성적인") -> CaptionResult:
     """주제로부터 캡션/해시태그/이미지 프롬프트를 생성한다."""
-    config.require("anthropic_api_key")
+    user_prompt = _USER_TEMPLATE.format(topic=topic, tone=tone)
 
+    provider = config.caption_provider
+    if provider == "anthropic":
+        raw = _anthropic(user_prompt, config)
+    elif provider == "gemini":
+        raw = _gemini(user_prompt, config)
+    else:
+        raise RuntimeError(f"알 수 없는 CAPTION_PROVIDER: {provider}")
+
+    data = _parse_json(raw)
+    hashtags = [_normalize_tag(t) for t in data.get("hashtags", []) if t.strip()]
+    return CaptionResult(
+        caption=data.get("caption", "").strip(),
+        hashtags=hashtags,
+        image_prompt=data.get("image_prompt", topic).strip(),
+    )
+
+
+def _anthropic(user_prompt: str, config: Config) -> str:
+    config.require("anthropic_api_key")
     try:
         import anthropic
     except ImportError as e:  # pragma: no cover
@@ -51,23 +75,30 @@ def generate_caption(topic: str, config: Config, tone: str = "친근하고 감�
         model=config.caption_model,
         max_tokens=1024,
         system=_SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": _USER_TEMPLATE.format(topic=topic, tone=tone),
-            }
-        ],
+        messages=[{"role": "user", "content": user_prompt}],
     )
+    return "".join(block.text for block in message.content if block.type == "text")
 
-    raw = "".join(block.text for block in message.content if block.type == "text")
-    data = _parse_json(raw)
 
-    hashtags = [_normalize_tag(t) for t in data.get("hashtags", []) if t.strip()]
-    return CaptionResult(
-        caption=data.get("caption", "").strip(),
-        hashtags=hashtags,
-        image_prompt=data.get("image_prompt", topic).strip(),
+def _gemini(user_prompt: str, config: Config) -> str:
+    """Gemini 2.5 Flash로 캡션 생성 (무료 등급 사용 가능)."""
+    config.require("gemini_api_key")
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as e:
+        raise RuntimeError("google-genai 패키지가 필요합니다: pip install google-genai") from e
+
+    client = genai.Client(api_key=config.gemini_api_key)
+    response = client.models.generate_content(
+        model=config.gemini_text_model,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=_SYSTEM,
+            response_mime_type="application/json",
+        ),
     )
+    return response.text or ""
 
 
 def _normalize_tag(tag: str) -> str:
