@@ -40,11 +40,26 @@ THEMES = {
         "body_bg": (250, 246, 238), "body_title": (33, 30, 24),
         "body_text": (74, 68, 56), "footer": (164, 152, 130),
     },
+    # 고급 편집 디자인 (Apple/Dior 무드: 여백·명조·절제된 골드)
+    "luxe": {
+        "cover_bg": (24, 22, 20), "cover_fg": (244, 240, 232), "cover_sub": (198, 164, 90),
+        "accent": (198, 164, 90),
+        "body_bg": (246, 242, 234), "body_title": (26, 22, 18),
+        "body_text": (72, 64, 54), "footer": (150, 138, 118),
+        "serif": True,
+    },
 }
 
 
-def render_cardnews(content: CardNews, config: Config, base_path: str) -> list[str]:
-    """카드뉴스 전체를 렌더링하고 생성된 이미지 경로 목록을 반환한다."""
+def render_cardnews(
+    content: CardNews, config: Config, base_path: str,
+    number: int | None = None, kicker: str | None = None,
+) -> list[str]:
+    """카드뉴스 전체를 렌더링하고 생성된 이미지 경로 목록을 반환한다.
+
+    number: 시리즈 번호(예: 1 → 표지에 NO.01 배지)
+    kicker: 표지 상단 카테고리 문구(예: '금융 가이드')
+    """
     theme = THEMES.get(config.card_theme, THEMES["navy"])
     w, h = config.card_dimensions
     total = len(content.cards) + 2  # 표지 + 본문 + 마무리
@@ -53,7 +68,7 @@ def render_cardnews(content: CardNews, config: Config, base_path: str) -> list[s
 
     # 표지
     p = f"{base_path}_01_cover.jpg"
-    _render_cover(content, theme, (w, h), config.brand_handle, p)
+    _render_cover(content, theme, (w, h), config.brand_handle, p, number, kicker)
     paths.append(p)
 
     # 본문 카드들
@@ -72,32 +87,43 @@ def render_cardnews(content: CardNews, config: Config, base_path: str) -> list[s
 # --------------------------------------------------------------------------- #
 # 슬라이드별 렌더링
 # --------------------------------------------------------------------------- #
-def _render_cover(content, theme, size, handle, out):
+def _render_cover(content, theme, size, handle, out, number=None, kicker=None):
     w, h = size
+    serif = theme.get("serif", False)
     img = Image.new("RGB", size, theme["cover_bg"])
     d = ImageDraw.Draw(img)
     margin = int(w * 0.09)
 
-    # 상단 포인트 바
-    d.rounded_rectangle([margin, int(h * 0.16), margin + 90, int(h * 0.16) + 14],
-                        radius=7, fill=theme["accent"])
+    # 상단 카테고리/번호 키커 + 골드 헤어라인
+    ky = int(h * 0.15)
+    kick_parts = []
+    if kicker:
+        kick_parts.append(kicker.upper())
+    if number is not None:
+        kick_parts.append(f"NO.{number:02d}")
+    kick_text = "   ·   ".join(kick_parts)
+    if kick_text:
+        kf = get_font(int(w * 0.034), "bold")
+        d.text((margin, ky), kick_text, font=kf, fill=theme["accent"])
+        ky += int(kf.size * 1.7)
+    d.line([(margin, ky), (margin + int(w * 0.16), ky)], fill=theme["accent"], width=3)
 
     # 보조 문구
     if content.cover_subtitle:
-        sub_font = get_font(int(w * 0.040), "bold")
-        d.text((margin, int(h * 0.21)), content.cover_subtitle, font=sub_font,
+        sub_font = get_font(int(w * 0.040), "serif" if serif else "bold")
+        d.text((margin, int(h * 0.225)), content.cover_subtitle, font=sub_font,
                fill=theme["cover_sub"])
 
     # 표지 제목 (큰 글씨, 여러 줄)
-    title_font = get_font(int(w * 0.092), "extrabold")
+    title_font = get_font(int(w * 0.090), "serif_xb" if serif else "extrabold")
     lines = _wrap_lines(d, content.cover_title, title_font, w - 2 * margin)
-    y = int(h * 0.28)
+    y = int(h * 0.30)
     for line in lines:
         d.text((margin, y), line, font=title_font, fill=theme["cover_fg"])
-        y += int(title_font.size * 1.22)
+        y += int(title_font.size * 1.24)
 
     # 스와이프 안내 + 핸들
-    hint_font = get_font(int(w * 0.038), "bold")
+    hint_font = get_font(int(w * 0.036), "bold")
     d.text((margin, int(h * 0.86)), "밀어서 보기  →", font=hint_font, fill=theme["accent"])
     _footer(d, size, margin, handle, theme["cover_sub"])
     img.save(out, "JPEG", quality=92)
@@ -116,10 +142,11 @@ def _render_content(card, idx, total, theme, size, handle, out):
     d.text((w - margin - tw, int(h * 0.07)), page, font=num_font, fill=theme["footer"])
 
     # 포인트 바 + 제목
+    serif = theme.get("serif", False)
     bar_y = int(h * 0.13)
     d.rounded_rectangle([margin, bar_y, margin + 64, bar_y + 12], radius=6,
                         fill=theme["accent"])
-    title_font = get_font(int(w * 0.058), "extrabold")
+    title_font = get_font(int(w * 0.058), "serif_xb" if serif else "extrabold")
     title_lines = _wrap_lines(d, card.get("title", ""), title_font, w - 2 * margin)
     y = bar_y + int(h * 0.035)
     for line in title_lines:
@@ -144,8 +171,9 @@ def _render_closing(content, theme, size, handle, out):
     img = Image.new("RGB", size, theme["cover_bg"])
     d = ImageDraw.Draw(img)
     margin = int(w * 0.09)
+    serif = theme.get("serif", False)
 
-    title_font = get_font(int(w * 0.072), "extrabold")
+    title_font = get_font(int(w * 0.072), "serif_xb" if serif else "extrabold")
     lines = _wrap_lines(d, content.closing_title or "끝까지 봐주셔서 감사해요", title_font,
                         w - 2 * margin)
     y = int(h * 0.34)

@@ -51,14 +51,28 @@ class Pipeline:
     # ------------------------------------------------------------------ #
     def _run_cardnews(self, topic, tone, dry_run, on_log) -> PostResult:
         from .card_render import render_cardnews
-        from .content import generate_cardnews
         from .publisher import publish_carousel
 
         cfg = self.config
         base = self._base_path(topic)
+        agent_report = None
 
-        on_log(f"📝 [1/3] '{topic}' 카드뉴스 내용 생성 중... (모델={cfg.caption_provider})")
-        content = generate_cardnews(topic, cfg, tone=tone)
+        if cfg.content_engine == "agentic":
+            from .agents import generate_cardnews_agentic
+            on_log(f"🤖 [1/3] '{topic}' 다중 에이전트 생성 중... (리서치→전략→팩트검증→카피→SEO→리스크)")
+            content, report = generate_cardnews_agentic(topic, cfg, tone=tone)
+            agent_report = {
+                "web_search_used": report.web_search_used,
+                "sources": report.sources,
+                "risk_flags": report.risk_flags,
+                "steps": [s["agent"] for s in report.steps],
+            }
+            note = "웹검색 ON" if report.web_search_used else "웹검색 미사용(내장지식)"
+            on_log(f"   ✓ 에이전트 7단계 완료 · {note} · 근거 {len(report.sources)}개")
+        else:
+            from .content import generate_cardnews
+            on_log(f"📝 [1/3] '{topic}' 카드뉴스 내용 생성 중... (모델={cfg.caption_provider})")
+            content = generate_cardnews(topic, cfg, tone=tone)
         on_log(f"   ✓ 표지 + 본문 {len(content.cards)}장 + 마무리 기획 완료")
 
         on_log(f"🎨 [2/3] 카드 {len(content.cards) + 2}장 렌더링 중... (테마={cfg.card_theme})")
@@ -74,7 +88,8 @@ class Pipeline:
             topic=topic, mode="cardnews", caption=content.caption,
             hashtags=content.hashtags, full_text=content.full_text,
             image_paths=paths, publish_result=pub,
-            extra={"cover_title": content.cover_title, "cards": content.cards},
+            extra={"cover_title": content.cover_title, "cards": content.cards,
+                   "agent_report": agent_report},
         )
         self._save_meta(base, result)
         return result

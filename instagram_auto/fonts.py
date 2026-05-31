@@ -14,10 +14,14 @@ import requests
 from PIL import ImageFont
 
 _BASE = "https://github.com/google/fonts/raw/main/ofl/nanumgothic"
+_BASE_SERIF = "https://github.com/google/fonts/raw/main/ofl/nanummyeongjo"
 _FILES = {
-    "regular": "NanumGothic-Regular.ttf",
-    "bold": "NanumGothic-Bold.ttf",
-    "extrabold": "NanumGothic-ExtraBold.ttf",
+    "regular": ("NanumGothic-Regular.ttf", _BASE),
+    "bold": ("NanumGothic-Bold.ttf", _BASE),
+    "extrabold": ("NanumGothic-ExtraBold.ttf", _BASE),
+    # 고급/편집 디자인용 명조(serif)
+    "serif": ("NanumMyeongjo-Bold.ttf", _BASE_SERIF),
+    "serif_xb": ("NanumMyeongjo-ExtraBold.ttf", _BASE_SERIF),
 }
 
 # 다운로드 실패 시 폴백할 시스템 CJK 폰트 후보
@@ -35,7 +39,7 @@ _cache_dir = Path(os.environ.get("FONT_DIR", "")) or (
 
 def _ensure(weight: str) -> str | None:
     """해당 두께 폰트 파일 경로를 확보(필요 시 다운로드)해 반환."""
-    fname = _FILES[weight]
+    fname, base = _FILES.get(weight, _FILES["regular"])
     path = _cache_dir / fname
     if path.exists() and path.stat().st_size > 10000:
         return str(path)
@@ -44,7 +48,7 @@ def _ensure(weight: str) -> str | None:
         return str(path) if path.exists() else None
     try:
         _cache_dir.mkdir(parents=True, exist_ok=True)
-        resp = requests.get(f"{_BASE}/{fname}", timeout=60)
+        resp = requests.get(f"{base}/{fname}", timeout=60)
         resp.raise_for_status()
         path.write_bytes(resp.content)
         return str(path)

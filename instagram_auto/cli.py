@@ -32,6 +32,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--cards", type=int, help="본문 카드 개수 (카드뉴스 모드)")
     parser.add_argument(
+        "--agentic", action="store_true",
+        help="7-에이전트 고급 파이프라인 사용 (리서치·팩트검증·SEO·리스크 등)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="업로드 없이 이미지/내용만 생성"
     )
     parser.add_argument(
@@ -49,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
         config.card_theme = args.theme
     if args.cards:
         config.card_count = args.cards
+    if args.agentic:
+        config.content_engine = "agentic"
     pipeline = Pipeline(config)
 
     topics: list[str] = []

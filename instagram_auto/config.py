@@ -74,6 +74,10 @@ class Config:
     content_mode: str = field(
         default_factory=lambda: _get("CONTENT_MODE", "cardnews").lower()
     )
+    # 생성 엔진: simple(단일 프롬프트) | agentic(7-에이전트 고급 파이프라인)
+    content_engine: str = field(
+        default_factory=lambda: _get("CONTENT_ENGINE", "simple").lower()
+    )
     # 카드뉴스 설정
     card_count: int = field(default_factory=lambda: int(_get("CARD_COUNT", "6") or 6))
     card_size: str = field(default_factory=lambda: _get("CARD_SIZE", "1080x1350"))
