@@ -24,6 +24,13 @@ class ImageError(RuntimeError):
 def generate_image(api_key: str, prompt: str, model: str = "gpt-image-1",
                    size: str = "1024x1024", timeout: int = 120) -> bytes:
     """OpenAI 이미지 API로 이미지를 생성해 PNG 바이트로 반환합니다."""
+    api_key = (api_key or "").strip()
+    # OpenAI 키는 영문/숫자(ASCII)여야 함. 한글 등이 섞이면 친절히 안내.
+    if not api_key.isascii() or not api_key.startswith("sk-"):
+        raise ImageError(
+            "OpenAI 키 형식이 올바르지 않습니다. .env의 OPENAI_API_KEY에 "
+            "한글·공백 없이 'sk-'로 시작하는 키 전체를 넣었는지 확인하세요."
+        )
     resp = requests.post(
         OPENAI_IMAGE_URL,
         headers={
