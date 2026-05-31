@@ -173,23 +173,40 @@ def _render_closing(content, theme, size, handle, out):
     margin = int(w * 0.09)
     serif = theme.get("serif", False)
 
-    title_font = get_font(int(w * 0.072), "serif_xb" if serif else "extrabold")
+    title_font = get_font(int(w * 0.066), "serif_xb" if serif else "extrabold")
     lines = _wrap_lines(d, content.closing_title or "끝까지 봐주셔서 감사해요", title_font,
                         w - 2 * margin)
-    y = int(h * 0.34)
+    y = int(h * 0.20)
     for line in lines:
         d.text((margin, y), line, font=title_font, fill=theme["cover_fg"])
-        y += int(title_font.size * 1.22)
+        y += int(title_font.size * 1.2)
+
+    # 댓글 유도 질문 (참여유도 핵심)
+    q = getattr(content, "comment_question", "")
+    if q:
+        y += int(h * 0.025)
+        qlabel = get_font(int(w * 0.034), "bold")
+        d.text((margin, y), "💬  당신의 생각은?", font=qlabel, fill=theme["accent"])
+        y += int(qlabel.size * 1.7)
+        qf = get_font(int(w * 0.046), "serif" if serif else "bold")
+        for line in _wrap_lines(d, q, qf, w - 2 * margin):
+            d.text((margin, y), line, font=qf, fill=theme["cover_fg"])
+            y += int(qf.size * 1.35)
 
     # CTA 버튼 박스
     cta_font = get_font(int(w * 0.044), "bold")
-    cta = content.closing_cta or "저장하고 팔로우 ❤️"
+    cta = content.closing_cta or "저장하고 팔로우"
     tw = d.textlength(cta, font=cta_font)
-    bx0, by0 = margin, y + int(h * 0.03)
+    bx0, by0 = margin, y + int(h * 0.04)
     d.rounded_rectangle([bx0, by0, bx0 + tw + int(w * 0.09), by0 + int(h * 0.075)],
                         radius=int(h * 0.0375), fill=theme["accent"])
     d.text((bx0 + int(w * 0.045), by0 + int(h * 0.022)), cta, font=cta_font,
            fill=theme["cover_bg"])
+
+    # 저장·공유·팔로우 한 줄
+    trio_font = get_font(int(w * 0.033), "bold")
+    d.text((margin, by0 + int(h * 0.11)), "📌 저장    🔖 공유    ✅ 팔로우",
+           font=trio_font, fill=theme["cover_sub"])
 
     _footer(d, size, margin, handle, theme["cover_sub"])
     img.save(out, "JPEG", quality=92)

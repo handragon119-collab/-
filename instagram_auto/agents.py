@@ -147,9 +147,11 @@ def copywriter_agent(topic, strategy, facts, trend, config, report) -> dict:
            "- 본문은 '구텐베르크 블록' 형식: 카드 하나당 1개 핵심 + 짧은 단락(2~3줄).\n"
            "- 인스타에서 자주 쓰는 친근한 말투. 과한 낚시는 금지(저품질·노출저하 위험).\n"
            "- 유행어/밈은 자연스러운 선에서 1~2개만 가볍게.\n"
+           "- caption에는 저장/팔로우/공유 문구를 넣지 마라(시스템이 자동 추가). 대신 댓글을 부르는 "
+           "comment_question(구체적 질문 한 줄)을 반드시 만든다.\n"
            '{"cover_title":"줄바꿈\\n가능","cover_subtitle":"...",'
            '"cards":[{"title":"...","body":"...\\n..."}],'
-           '"closing_title":"...","closing_cta":"...","caption":"...","hashtags":["#..."]}')
+           '"closing_title":"...","closing_cta":"...","comment_question":"...","caption":"...","hashtags":["#..."]}')
     user = (f"주제: {topic}\n전략: {json.dumps(strategy, ensure_ascii=False)[:1200]}\n"
             f"검증사실: {json.dumps(facts.get('verified_facts', []), ensure_ascii=False)[:1200]}\n"
             f"변동항목(확인필요): {json.dumps(facts.get('volatile_items', []), ensure_ascii=False)[:600]}\n"
@@ -165,8 +167,9 @@ def seo_agent(draft: dict, config: Config, report: AgentReport) -> dict:
     sys = ("너는 인스타 SEO 편집자다. 검색·탐색 노출을 높이도록 제목·캡션·해시태그를 최적화한다.\n"
            "- 제목: 검색 키워드 자연 포함 + 후킹 유지.\n"
            "- 해시태그: 대형/중형/소형(니치) 12~15개 믹스, 주제 무관/금지 태그 제외.\n"
-           "- 캡션: 첫 줄 후킹 + 저장/댓글 유도 + 근거 기관 표기.\n"
-           "원본 의미는 유지하되 최적화. JSON 동일 스키마로만 출력.")
+           "- 캡션: 첫 줄 후킹 + 근거 기관 표기. (저장/팔로우 문구는 넣지 말 것 — 자동 추가됨)\n"
+           "- comment_question은 더 답하고 싶게 다듬어 반드시 유지한다.\n"
+           "원본 의미는 유지하되 최적화. JSON 동일 스키마(comment_question 포함)로만 출력.")
     user = json.dumps(draft, ensure_ascii=False)
     data = llm.complete_json(sys, user, config)
     report.log("seo", f"해시태그 {len(data.get('hashtags', []))}개로 최적화", None)
@@ -219,5 +222,6 @@ def generate_cardnews_agentic(
         closing_cta=draft.get("closing_cta", "저장하고 팔로우").strip(),
         caption=draft.get("caption", "").strip(),
         hashtags=hashtags,
+        comment_question=draft.get("comment_question", "").strip(),
     )
     return cn, report
