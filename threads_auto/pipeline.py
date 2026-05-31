@@ -191,6 +191,35 @@ class ThreadsPipeline:
             text = text[:260].rstrip()
         return text
 
+    def write_from_image(self, image_bytes: bytes, media_type: str = "image/png") -> str:
+        """업로드한 사진을 보고, 사진에 어울리는 스레드 글을 작성합니다(비전)."""
+        import base64
+
+        b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+        user = [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": b64},
+            },
+            {
+                "type": "text",
+                "text": (
+                    "이 사진을 보고, 사진 속 분위기·디테일에 딱 맞는 스레드 게시글을 써줘. "
+                    "사진에 보이는 구체적인 요소를 자연스럽게 녹이되, 설명문이 아니라 "
+                    "감정·장면이 담긴 글로. 반드시 200자 이내로 짧게."
+                ),
+            },
+        ]
+        resp = self.client.messages.create(
+            model=self.model,
+            max_tokens=800,
+            thinking={"type": "adaptive"},
+            system=STYLE_GUIDE,
+            messages=[{"role": "user", "content": user}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        return text[:260] if len(text) > 260 else text
+
     def image_prompt(self, post_text: str) -> str:
         """프리미엄 브랜드 감성의 이미지 생성 프롬프트(영어)를 만듭니다."""
         system = (

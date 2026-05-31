@@ -269,6 +269,58 @@ def api_generate_image():
         return jsonify({"ok": False, "error": f"이미지 생성 실패: {exc}"}), 500
 
 
+_MEDIA_TYPES = {
+    "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+    "webp": "image/webp", "gif": "image/gif",
+}
+
+
+@app.post("/api/upload_image")
+def api_upload_image():
+    """사용자가 직접 올린 이미지를 호스팅하고 공개 URL을 반환합니다.
+
+    form 필드 write=="1"이면, 그 사진을 보고 AI가 글까지 써서 함께 반환합니다.
+    호스팅은 Imgur 키가 있으면 Imgur, 없으면 cloudflared 터널을 사용합니다.
+    """
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "이미지 파일이 없습니다."}), 400
+
+    data = f.read()
+    if not data:
+        return jsonify({"ok": False, "error": "빈 파일입니다."}), 400
+    if len(data) > 8 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "파일이 너무 큽니다(8MB 이하)."}), 400
+
+    ext = (f.filename.rsplit(".", 1)[-1] if "." in f.filename else "png").lower()
+    media_type = _MEDIA_TYPES.get(ext, "image/png")
+    want_write = request.form.get("write") == "1"
+
+    # 1) 호스팅 (게시에 쓸 공개 URL)
+    try:
+        if config.IMGUR_CLIENT_ID:
+            from threads_auto.image_generator import upload_to_imgur
+            url = upload_to_imgur(config.IMGUR_CLIENT_ID, data)
+        else:
+            from threads_auto import tunnel_host
+            url = tunnel_host.host_image(data, ext=ext)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"이미지 업로드 실패: {exc}"}), 500
+
+    # 2) (선택) 사진을 보고 AI가 글 작성
+    text = None
+    text_error = None
+    if want_write:
+        try:
+            config.require_anthropic()
+            pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+            text = pipe.write_from_image(data, media_type)
+        except Exception as exc:  # noqa: BLE001
+            text_error = str(exc)
+
+    return jsonify({"ok": True, "image_url": url, "text": text, "text_error": text_error})
+
+
 @app.post("/api/post")
 def api_post():
     """입력된 글을 스레드에 게시합니다. image_url이 있으면 이미지와 함께 게시합니다."""

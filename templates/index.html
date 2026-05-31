@@ -101,6 +101,13 @@
       <button class="ghost" id="genBtn" style="margin-top:8px">✨ 글만 생성</button>
       <p class="hint">🧠 '글 + 사진 한 번에'를 누르면 글과 사진이 <b>함께 미리보기</b>로 떠요. 확인 후 게시하면 됩니다. (리서치·팩트체크 포함, 40~80초)</p>
 
+      <div style="border-top:1px solid #eee;margin:16px 0 4px"></div>
+      <label>📷 내 사진 사용</label>
+      <button class="ghost" id="uploadBtn">📁 내 사진 올리기</button>
+      <button class="ghost" id="uploadWriteBtn" style="margin-top:8px">🖼️ 내 사진 보고 AI가 글쓰기</button>
+      <input type="file" id="fileInput" accept="image/*" style="display:none" />
+      <p class="hint">컴퓨터의 사진을 올려 글에 붙이거나, 그 사진을 보고 AI가 어울리는 글을 쓰게 할 수 있어요.</p>
+
       <label style="margin-top:20px">생성된 글 (수정 가능)</label>
       <textarea id="postText" placeholder="여기에 AI가 만든 글이 나옵니다. 직접 써도 됩니다."></textarea>
       <div class="count"><span id="charCount">0</span> / 500자</div>
@@ -241,6 +248,34 @@ async function loadCategories() {
     });
   } catch (e) {}
 }
+
+// 📷 내 사진 올리기 / 사진 보고 AI 글쓰기
+let UPLOAD_MODE = "attach"; // "attach" | "write"
+$("uploadBtn").onclick = () => { UPLOAD_MODE = "attach"; $("fileInput").value = ""; $("fileInput").click(); };
+$("uploadWriteBtn").onclick = () => { UPLOAD_MODE = "write"; $("fileInput").value = ""; $("fileInput").click(); };
+$("fileInput").onchange = async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const writing = UPLOAD_MODE === "write";
+  toast(writing ? "사진 분석해서 글 쓰는 중… (20~40초)" : "사진 올리는 중…");
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("write", writing ? "1" : "0");
+  try {
+    const resp = await fetch("/api/upload_image", { method: "POST", body: fd });
+    const j = await resp.json();
+    if (j.ok) {
+      CUR_IMAGE = j.image_url;
+      $("imgEl").src = j.image_url;
+      $("imageBox").style.display = "block";
+      $("imgPreview").style.display = "block";
+      if (j.text) { $("postText").value = j.text; $("charCount").textContent = j.text.length; }
+      if (j.text_error) toast("사진은 올렸지만 글 작성 실패: " + j.text_error, "error");
+      else toast(writing ? "사진 보고 글까지 썼어요!" : "사진을 올렸어요.", "ok");
+      $("imgPreview").scrollIntoView({ behavior: "smooth", block: "center" });
+    } else toast(j.error || "업로드 실패", "error");
+  } catch (err) { toast("업로드 오류: " + err, "error"); }
+};
 
 // 🎯 자동 주제 설정 (랜덤으로 주제 하나 뽑아 입력칸에 채움)
 $("randTopicBtn").onclick = async () => {

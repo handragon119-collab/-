@@ -119,10 +119,13 @@ def get_public_base() -> str:
         return _public_base
 
 
-def host_image(image_bytes: bytes) -> str:
-    """이미지를 저장하고 공개 URL을 반환합니다."""
+def host_image(image_bytes: bytes, ext: str = "png") -> str:
+    """이미지를 저장하고 공개 URL을 반환합니다. ext로 확장자(jpg/png 등) 지정."""
     base = get_public_base()
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.png"
+    ext = (ext or "png").lstrip(".").lower()
+    if ext not in ("png", "jpg", "jpeg", "webp", "gif"):
+        ext = "png"
+    name = f"{uuid.uuid4().hex}.{ext}"
     (IMAGE_DIR / name).write_bytes(image_bytes)
     return f"{base}/{name}"
