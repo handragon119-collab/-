@@ -36,6 +36,7 @@
           <div>
             <label>테마</label>
             <select id="theme">
+              <option value="luxe">luxe (고급 명조)</option>
               <option value="navy">navy</option>
               <option value="mint">mint</option>
               <option value="coral">coral</option>
@@ -49,15 +50,25 @@
         </div>
 
         <div class="row">
-          <div class="grow">
-            <label>톤앤매너 (선택)</label>
-            <input id="tone" type="text" placeholder="예) 친근하고 신뢰감 있는" />
+          <div>
+            <label>시리즈 번호 (선택)</label>
+            <input id="number" type="number" placeholder="예) 1 → NO.01" min="1" />
           </div>
           <div class="grow">
-            <label>계정 핸들 (카드 하단)</label>
+            <label>카테고리 키커 (선택)</label>
+            <input id="kicker" type="text" placeholder="예) 금융 가이드" />
+          </div>
+          <div class="grow">
+            <label>계정 핸들</label>
             <input id="brand" type="text" placeholder="@my_account" />
           </div>
         </div>
+
+        <label>톤앤매너 (선택)</label>
+        <input id="tone" type="text" placeholder="예) 친근하고 신뢰감 있는" />
+
+        <label class="check"><input id="agentic" type="checkbox" />
+          🤖 고급 에이전트 모드 (리서치·팩트검증·SEO·리스크 7단계)</label>
 
         <button id="btn-generate" class="btn btn-primary">✨ 생성하기</button>
         <p class="hint">생성에는 캡션용 LLM(Gemini/Claude) 키가 필요합니다. 카드뉴스는 이미지 API 비용이 없습니다.</p>
@@ -68,6 +79,7 @@
         <div id="preview-empty" class="empty">왼쪽에서 주제를 입력하고 생성하면<br/>여기에 카드 미리보기가 나타납니다.</div>
         <div id="preview" class="preview hidden">
           <div id="slides" class="slides"></div>
+          <div id="agent-report" class="agent-report hidden"></div>
           <label>캡션 (수정 가능)</label>
           <textarea id="caption" rows="7"></textarea>
           <div class="row">

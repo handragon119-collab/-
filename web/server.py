@@ -49,6 +49,9 @@ class GenerateReq(BaseModel):
     cards: int = 6
     tone: str | None = None
     brand_handle: str | None = None
+    agentic: bool = False
+    number: int | None = None
+    kicker: str | None = None
 
 
 class PublishReq(BaseModel):
@@ -119,10 +122,13 @@ def api_generate(req: GenerateReq):
     }
     if req.brand_handle is not None:
         overrides["brand_handle"] = req.brand_handle
+    if req.agentic:
+        overrides["content_engine"] = "agentic"
     cfg = settings_mod.build_config(overrides)
 
     job_id = uuid.uuid4().hex[:12]
     base = OUTPUT_DIR / f"web_{job_id}"
+    agent_report = None
 
     try:
         if req.mode == "photo":
@@ -131,10 +137,20 @@ def api_generate(req: GenerateReq):
             paths = [img]
             caption, hashtags, cover_title = cap.caption, cap.hashtags, req.topic
         else:
-            cn = content_mod.generate_cardnews(
-                req.topic, cfg, tone=req.tone or "친근하고 신뢰감 있는"
-            )
-            paths = card_render.render_cardnews(cn, cfg, str(base))
+            if cfg.content_engine == "agentic":
+                from instagram_auto.agents import generate_cardnews_agentic
+                cn, report = generate_cardnews_agentic(
+                    req.topic, cfg, tone=req.tone or "친근하고 신뢰감 있는")
+                agent_report = {
+                    "web_search_used": report.web_search_used,
+                    "sources": report.sources, "risk_flags": report.risk_flags,
+                    "steps": [s["agent"] for s in report.steps],
+                }
+            else:
+                cn = content_mod.generate_cardnews(
+                    req.topic, cfg, tone=req.tone or "친근하고 신뢰감 있는")
+            paths = card_render.render_cardnews(
+                cn, cfg, str(base), number=req.number, kicker=req.kicker or None)
             caption, hashtags, cover_title = cn.caption, cn.hashtags, cn.cover_title
     except Exception as e:
         raise HTTPException(400, f"생성 실패: {e}")
@@ -153,6 +169,7 @@ def api_generate(req: GenerateReq):
         "hashtags": hashtags,
         "full_text": full_text,
         "images": [f"/output/{Path(p).name}" for p in paths],
+        "agent_report": agent_report,
     }
 
 

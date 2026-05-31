@@ -120,6 +120,9 @@ async function generate() {
       cards: parseInt($("cards").value) || 5,
       tone: $("tone").value.trim() || null,
       brand_handle: $("brand").value.trim() || null,
+      agentic: $("agentic").checked,
+      number: parseInt($("number").value) || null,
+      kicker: $("kicker").value.trim() || null,
     };
     const r = await api("/api/generate", { method: "POST", body: JSON.stringify(payload) });
     currentJob = r.job_id;
@@ -144,6 +147,21 @@ function renderPreview(r) {
     slides.appendChild(img);
   });
   $("caption").value = r.full_text;
+
+  const rep = $("agent-report");
+  if (r.agent_report) {
+    const a = r.agent_report;
+    rep.classList.remove("hidden");
+    rep.innerHTML =
+      `<b>🤖 에이전트 리포트</b><br/>` +
+      a.steps.map((s) => `<span class="chip">${s}</span>`).join("") +
+      `<br/>웹검색: <b>${a.web_search_used ? "ON" : "미사용(내장지식)"}</b>` +
+      ` · 근거 기관: <b>${(a.sources || []).join(", ") || "-"}</b>` +
+      (a.risk_flags && a.risk_flags.length
+        ? ` · ⚠️ 리스크: ${a.risk_flags.join(", ")}` : " · 리스크 없음");
+  } else {
+    rep.classList.add("hidden");
+  }
 }
 
 // ---- 발행 ----
