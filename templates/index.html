@@ -99,7 +99,7 @@
       <label style="margin-top:16px">③ 만들기</label>
       <button class="primary" id="autoBtn">🎲 글 + 사진 한 번에 자동 생성</button>
       <button class="ghost" id="genBtn" style="margin-top:8px">✨ 글만 생성</button>
-      <p class="hint">카테고리를 누르면 주황색으로 선택돼요. '자동 주제 설정'으로 주제를 뽑은 뒤 만들거나, 곧바로 '글+사진 자동 생성'을 눌러도 돼요.</p>
+      <p class="hint">🧠 고급 모드: 리서치 → 차별화 전략 → 민감주제 점검 → (필요시) 기관 출처 팩트체크 → 한국 스레드 반말 문체로 작성합니다. 품질이 높은 대신 30~70초 걸려요.</p>
 
       <label style="margin-top:20px">생성된 글 (수정 가능)</label>
       <textarea id="postText" placeholder="여기에 AI가 만든 글이 나옵니다. 직접 써도 됩니다."></textarea>
@@ -255,7 +255,7 @@ $("randTopicBtn").onclick = async () => {
 $("autoBtn").onclick = async () => {
   const btn = $("autoBtn");
   btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> 자동 생성 중… (사진 포함 20~40초)';
+  btn.innerHTML = '<span class="spin"></span> 리서치·작성·사진 중… (40~80초)';
   CUR_IMAGE = null; $("imgPreview").style.display = "none";
   try {
     const r = await api("/api/auto", { method: "POST", body: JSON.stringify({ category: SEL_CAT, topic: $("topicInput").value, with_image: true }) });
@@ -283,7 +283,7 @@ $("autoBtn").onclick = async () => {
 $("genBtn").onclick = async () => {
   const btn = $("genBtn");
   btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> 생성 중… (10~20초)';
+  btn.innerHTML = '<span class="spin"></span> 리서치·작성 중… (30~60초)';
   try {
     const r = await api("/api/generate", { method: "POST", body: JSON.stringify({ topic: $("topicInput").value, category: SEL_CAT }) });
     if (r.ok) {

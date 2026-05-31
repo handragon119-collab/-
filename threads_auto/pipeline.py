@@ -1,0 +1,218 @@
+"""고급 콘텐츠 생성 파이프라인 (다단계 에이전트).
+
+흐름:
+  1) 리서치+전략+리스크 에이전트 — 웹 검색으로 주제를 조사하고, 차별화 각도/구조/
+     민감도/팩트 필요 여부를 판단
+  2) 팩트 검증 에이전트 (필요할 때만) — 웹 검색으로 확인하되, 정부·공공기관·학술·
+     주요 언론 등 '공신력 있는 출처'로 검증된 사실만 인정
+  3) 글쓰기 에이전트 — 한국 스레드 특유의 '반말·훅 중심·짧은 호흡' 바이럴 문체로 작성
+  4) SEO·편집은 글쓰기 단계에 통합 (키워드/해시태그 절제)
+
+웹 검색은 Anthropic API에 내장된 server-side web_search 도구를 사용합니다.
+(추가 키 불필요 — Claude API 키만 있으면 됨)
+
+주의: Threads의 '조회수 상위 글'을 직접 스크래핑할 공개 API는 없습니다.
+따라서 본 파이프라인은 웹 검색 + 한국 스레드 고성과 글의 문체 특성을 학습한
+가이드로 그에 최대한 근접한 글을 만듭니다.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+
+import anthropic
+
+WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
+
+# 공신력 있는 출처로 인정하는 도메인 힌트(팩트 검증 에이전트에 안내)
+CREDIBLE_SOURCE_HINT = (
+    "정부(.go.kr, .gov), 공공기관, 학술(.ac.kr, .edu, 학회/저널), 통계청·"
+    "한국은행 등 공식 통계, 주요 언론사(연합뉴스·KBS 등), 국제기구(WHO·OECD 등)"
+)
+
+# 한국 스레드 고성과 글의 문체 가이드 (반말 기반)
+STYLE_GUIDE = """너는 한국 'Threads(스레드)'에서 조회수가 잘 나오는 글을 쓰는 작가다.
+
+[한국 스레드 바이럴 글의 핵심 특성 — 반드시 반영]
+- 반말로 쓴다. 친구에게 혼잣말하듯, 일기처럼 솔직하게.
+- 첫 줄(훅)이 생명이다. 스크롤을 멈추게 하는 한 문장으로 시작한다.
+  (공감 찌르기 / 의외의 고백 / 반전 / 구체적 장면 중 하나)
+- 문장은 짧게. 2~3문장마다 줄을 바꿔 호흡을 만든다.
+- 구체적인 디테일·숫자·장면을 넣는다. 추상적인 좋은 말은 빼라.
+- 살짝의 솔직함/약점을 드러내면 공감이 커진다.
+- 광고처럼 보이지 않게. 정보가 있어도 경험 안에 자연스럽게 녹인다.
+- 마지막은 여운 또는 가벼운 질문 한 줄. ("너넨 어때?" 같은, 억지 댓글 구걸 X)
+- 해시태그는 0~1개, 이모지는 0~2개로 절제.
+- 마크다운(##, **, - )을 쓰지 않는다. 순수 텍스트.
+- 분량은 공백 포함 250~450자.
+- 설명·따옴표 없이 게시글 본문만 출력한다."""
+
+# 프리미엄 디자인 이미지 프롬프트 가이드 (애플·나이키·무인양품 감성)
+DESIGN_GUIDE = (
+    "Minimal, premium editorial aesthetic inspired by Apple, Nike, and Muji: "
+    "lots of negative space, restrained neutral palette with a single accent color, "
+    "soft natural light, refined textures, calm high-end mood, object or scene centered, "
+    "magazine-quality composition. No text, no logos, no human faces. Subtle soft shadows."
+)
+
+
+class PipelineError(RuntimeError):
+    """파이프라인 단계 실패 시 발생."""
+
+
+def _extract_json(text: str) -> dict:
+    """텍스트에서 첫 JSON 객체를 관대하게 추출합니다."""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return {}
+
+
+class ThreadsPipeline:
+    def __init__(self, api_key: str, model: str):
+        self.client = anthropic.Anthropic(api_key=api_key)
+        self.model = model
+
+    def _complete(self, system: str, user: str, *, tools=None,
+                  max_tokens: int = 2500, max_loops: int = 6) -> str:
+        """한 번의 에이전트 호출. 웹 검색(server tool) 사용 시 pause_turn을 이어받음."""
+        messages = [{"role": "user", "content": user}]
+        last = None
+        for _ in range(max_loops):
+            resp = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                thinking={"type": "adaptive"},
+                system=system,
+                messages=messages,
+                tools=tools or [],
+            )
+            last = resp
+            if resp.stop_reason == "pause_turn":
+                # 서버 도구(웹 검색)가 반복 한도에 걸림 → 이어서 진행
+                messages.append({"role": "assistant", "content": resp.content})
+                continue
+            break
+        return "".join(
+            b.text for b in (last.content if last else []) if b.type == "text"
+        ).strip()
+
+    # ── 1단계: 리서치 + 전략 + 리스크 ──
+    def research(self, topic: str) -> dict:
+        system = (
+            "너는 리서치·전략·리스크를 한 번에 보는 콘텐츠 디렉터다. "
+            "web_search로 이 주제와 관련해 한국에서 사람들이 어떤 이야기를 하는지, "
+            "흔한 클리셰는 무엇인지 빠르게 파악하고, 남들과 다른 '차별화 각도'를 찾아라. "
+            "또한 정치·종교·의료/건강 효능·투자 단정·타인 비방 등 민감 소지를 점검하라."
+        )
+        user = (
+            f"주제: {topic}\n\n"
+            "아래 JSON 형식으로만 답하라(설명 금지):\n"
+            "{\n"
+            '  "angle": "남들과 다른 핵심 각도(한 문장)",\n'
+            '  "differentiation": "흔한 클리셰와 어떻게 다른지",\n'
+            '  "structure": "훅→전개→마무리 구조 요약",\n'
+            '  "keyword": "검색·공감에 유리한 핵심 키워드 1개",\n'
+            '  "sensitivity": "low|medium|high",\n'
+            '  "sensitivity_note": "민감하면 주의점, 아니면 빈 문자열",\n'
+            '  "needs_facts": true 또는 false (수치·사실 주장이 필요한 주제인가)\n'
+            "}"
+        )
+        out = self._complete(system, user, tools=[WEB_SEARCH_TOOL], max_tokens=2000)
+        data = _extract_json(out)
+        if not data:
+            # 리서치 실패해도 멈추지 않도록 기본값
+            data = {
+                "angle": "", "differentiation": "", "structure": "",
+                "keyword": "", "sensitivity": "low", "sensitivity_note": "",
+                "needs_facts": False,
+            }
+        return data
+
+    # ── 2단계: 팩트 검증 (needs_facts일 때만) ──
+    def factcheck(self, topic: str, angle: str) -> dict:
+        system = (
+            "너는 엄격한 팩트 검증 에이전트다. web_search로 사실을 확인하되, "
+            f"공신력 있는 출처({CREDIBLE_SOURCE_HINT})로 교차 검증된 사실만 인정한다. "
+            "블로그·커뮤니티·광고·출처 불명은 인정하지 않는다. "
+            "검증되지 않으면 과감히 버려라. 확실한 게 없으면 빈 목록을 반환하라."
+        )
+        user = (
+            f"주제: {topic}\n각도: {angle}\n\n"
+            "이 글에 넣을 만한, 검증된 사실만 JSON으로:\n"
+            "{\n"
+            '  "verified_facts": [\n'
+            '    {"fact": "검증된 사실(간결)", "source": "출처 기관/언론명", "url": "출처 URL"}\n'
+            "  ],\n"
+            '  "note": "주의사항 또는 빈 문자열"\n'
+            "}\n"
+            "공신력 출처로 확인 안 되면 verified_facts를 빈 배열로 둬라."
+        )
+        out = self._complete(system, user, tools=[WEB_SEARCH_TOOL], max_tokens=2000)
+        data = _extract_json(out)
+        if not data:
+            data = {"verified_facts": [], "note": ""}
+        return data
+
+    # ── 3단계: 글쓰기 (반말 바이럴 문체) ──
+    def write(self, topic: str, research: dict, facts: dict) -> str:
+        brief = [f"주제: {topic}"]
+        if research.get("angle"):
+            brief.append(f"차별화 각도: {research['angle']}")
+        if research.get("structure"):
+            brief.append(f"구조: {research['structure']}")
+        if research.get("keyword"):
+            brief.append(f"핵심 키워드(자연스럽게 1번): {research['keyword']}")
+        if research.get("sensitivity") in ("medium", "high"):
+            brief.append(
+                f"⚠️ 민감 주의: {research.get('sensitivity_note','')} "
+                "단정·자극을 피하고 개인 경험·의견으로 부드럽게."
+            )
+        vf = facts.get("verified_facts") or []
+        if vf:
+            lines = "; ".join(f"{f.get('fact')} (출처: {f.get('source')})" for f in vf)
+            brief.append(
+                "검증된 사실만 사용(아래 외 수치/단정 금지): " + lines
+            )
+        else:
+            brief.append("이 글엔 검증된 사실 데이터가 없으니, 수치·단정적 주장은 쓰지 마라.")
+
+        user = "\n".join(brief) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라."
+        text = self._complete(STYLE_GUIDE, user, max_tokens=1500)
+        if len(text) > 500:
+            text = text[:500].rstrip()
+        return text
+
+    def image_prompt(self, post_text: str) -> str:
+        """프리미엄 브랜드 감성의 이미지 생성 프롬프트(영어)를 만듭니다."""
+        system = (
+            "You write a single concise English image-generation prompt for a premium "
+            "social post. Output only the prompt, no explanation."
+        )
+        user = (
+            "Write one image prompt that fits this Korean post's mood. "
+            f"Apply this art direction strictly: {DESIGN_GUIDE}\n\nPost:\n{post_text}"
+        )
+        return self._complete(system, user, max_tokens=400)
+
+    # ── 전체 실행 ──
+    def run(self, topic: str) -> dict:
+        """리서치→(팩트)→글쓰기. {text, meta} 반환."""
+        research = self.research(topic)
+        facts = {"verified_facts": [], "note": ""}
+        if research.get("needs_facts"):
+            facts = self.factcheck(topic, research.get("angle", ""))
+        text = self.write(topic, research, facts)
+        return {
+            "text": text,
+            "meta": {
+                "angle": research.get("angle", ""),
+                "sensitivity": research.get("sensitivity", "low"),
+                "sensitivity_note": research.get("sensitivity_note", ""),
+                "facts": facts.get("verified_facts", []),
+            },
+        }

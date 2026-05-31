@@ -16,6 +16,8 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 import config
+import random
+
 from threads_auto import safety
 from threads_auto.content_generator import (
     ContentGenerator,
@@ -23,6 +25,19 @@ from threads_auto.content_generator import (
 )
 from threads_auto.threads_client import ThreadsClient, ThreadsError
 from threads_auto.image_generator import ImageError, create_image_url_auto
+from threads_auto.pipeline import ThreadsPipeline
+
+
+def _resolve_topic(topic: str | None, category: str | None) -> str | None:
+    """topic이 있으면 그대로, 없으면 카테고리(또는 전체)에서 무작위로 고릅니다."""
+    if topic:
+        return topic
+    cats = load_categorized_topics()
+    if category and category in cats:
+        pool = cats[category]
+    else:
+        pool = [t for items in cats.values() for t in items]
+    return random.choice(pool) if pool else None
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -136,18 +151,24 @@ def api_generate():
     data = request.get_json(silent=True) or {}
     topic = (data.get("topic") or "").strip() or None
     category = (data.get("category") or "").strip() or None
+    advanced = bool(data.get("advanced", True))  # 기본: 고급 파이프라인
+    topic = _resolve_topic(topic, category)
+
     try:
+        if advanced and topic:
+            pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+            result = pipe.run(topic)
+            return jsonify({
+                "ok": True, "text": result["text"], "topic": topic,
+                "length": len(result["text"]), "meta": result["meta"],
+            })
+        # 기본(빠른) 모드 또는 폴백
         gen = ContentGenerator(
             api_key=config.ANTHROPIC_API_KEY,
             model=config.CLAUDE_MODEL,
             persona=config.THREADS_PERSONA,
         )
-        if topic:
-            text = gen.generate(topic)
-        elif category:
-            text, topic = gen.generate_from_category(category)
-        else:
-            text, topic = gen.generate_from_random_topic()
+        text = gen.generate(topic)
         return jsonify({"ok": True, "text": text, "topic": topic, "length": len(text)})
     except Exception as exc:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
@@ -168,17 +189,23 @@ def api_auto():
     category = (data.get("category") or "").strip() or None
     topic = (data.get("topic") or "").strip() or None
     want_image = bool(data.get("with_image", True))
+    advanced = bool(data.get("advanced", True))
+    topic = _resolve_topic(topic, category)
 
-    gen = ContentGenerator(
-        api_key=config.ANTHROPIC_API_KEY,
-        model=config.CLAUDE_MODEL,
-        persona=config.THREADS_PERSONA,
-    )
+    pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+    meta = None
     try:
-        if topic:
-            text = gen.generate(topic)
+        if advanced and topic:
+            result = pipe.run(topic)
+            text = result["text"]
+            meta = result["meta"]
         else:
-            text, topic = gen.generate_from_category(category)
+            gen = ContentGenerator(
+                api_key=config.ANTHROPIC_API_KEY,
+                model=config.CLAUDE_MODEL,
+                persona=config.THREADS_PERSONA,
+            )
+            text = gen.generate(topic)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
 
@@ -186,7 +213,8 @@ def api_auto():
     image_error = None
     if want_image and config.has_image_support():
         try:
-            prompt = gen.generate_image_prompt(text)
+            # 프리미엄 디자인 감성의 이미지 프롬프트
+            prompt = pipe.image_prompt(text)
             image_url = create_image_url_auto(
                 config.OPENAI_API_KEY,
                 config.IMGUR_CLIENT_ID,
@@ -205,6 +233,7 @@ def api_auto():
             "length": len(text),
             "image_url": image_url,
             "image_error": image_error,
+            "meta": meta,
         }
     )
 
@@ -224,12 +253,8 @@ def api_generate_image():
         return jsonify({"ok": False, "error": "이미지를 만들 글이 비어 있습니다."}), 400
 
     try:
-        gen = ContentGenerator(
-            api_key=config.ANTHROPIC_API_KEY,
-            model=config.CLAUDE_MODEL,
-            persona=config.THREADS_PERSONA,
-        )
-        prompt = gen.generate_image_prompt(text)
+        pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+        prompt = pipe.image_prompt(text)
         image_url = create_image_url_auto(
             config.OPENAI_API_KEY,
             config.IMGUR_CLIENT_ID,

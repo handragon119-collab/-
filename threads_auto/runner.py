@@ -6,11 +6,14 @@ import json
 import time
 from datetime import datetime
 
+import random
+
 import config
 from threads_auto import safety
-from threads_auto.content_generator import ContentGenerator
+from threads_auto.content_generator import ContentGenerator, load_topics
 from threads_auto.threads_client import ThreadsClient
 from threads_auto.image_generator import ImageError, create_image_url_auto
+from threads_auto.pipeline import ThreadsPipeline
 
 LOG_PATH = safety.LOG_PATH
 
@@ -22,9 +25,22 @@ def _log_post(record: dict) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def _generate_unique(generator: ContentGenerator, max_tries: int = 3) -> tuple[str, str | None]:
+def _make_post(pipe: ThreadsPipeline, generator: ContentGenerator,
+               topic: str) -> str:
+    """고급 파이프라인으로 글을 생성하되, 실패하면 기본 생성으로 폴백합니다."""
+    try:
+        return pipe.run(topic)["text"]
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠️ 고급 생성 실패 → 기본 생성으로 진행 ({exc})")
+        return generator.generate(topic)
+
+
+def _generate_unique(pipe: ThreadsPipeline, generator: ContentGenerator,
+                     max_tries: int = 3) -> tuple[str, str | None]:
     """중복(유사) 글을 피해 최대 max_tries번 재생성합니다."""
-    body, topic = generator.generate_from_random_topic()
+    topics = load_topics() or [None]
+    topic = random.choice(topics)
+    body = _make_post(pipe, generator, topic) if topic else generator.generate(None)
     for attempt in range(max_tries):
         dup, sim = safety.is_duplicate(
             body,
@@ -34,7 +50,8 @@ def _generate_unique(generator: ContentGenerator, max_tries: int = 3) -> tuple[s
         if not dup:
             return body, topic
         print(f"  ↻ 최근 글과 유사({sim:.0%}) → 재생성 ({attempt + 1}/{max_tries})")
-        body, topic = generator.generate_from_random_topic()
+        topic = random.choice(topics)
+        body = _make_post(pipe, generator, topic) if topic else generator.generate(None)
     print("  ⚠️ 유사 글이 계속 생성됨. 마지막 결과로 진행합니다.")
     return body, topic
 
@@ -56,6 +73,7 @@ def run_once(text: str | None = None, dry_run: bool = False,
         model=config.CLAUDE_MODEL,
         persona=config.THREADS_PERSONA,
     )
+    pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
 
     posts = config.POSTS_PER_RUN if text is None else 1
 
@@ -79,7 +97,7 @@ def run_once(text: str | None = None, dry_run: bool = False,
         if text is not None:
             body, topic = text, None
         else:
-            body, topic = _generate_unique(generator)
+            body, topic = _generate_unique(pipe, generator)
 
         print("\n" + "=" * 50)
         print(f"[{i + 1}/{posts}] 생성된 글" + (f" (주제: {topic})" if topic else ""))
@@ -97,7 +115,7 @@ def run_once(text: str | None = None, dry_run: bool = False,
         if with_image:
             try:
                 print("  🎨 이미지 생성 중…")
-                prompt = generator.generate_image_prompt(body)
+                prompt = pipe.image_prompt(body)
                 image_url = create_image_url_auto(
                     config.OPENAI_API_KEY,
                     config.IMGUR_CLIENT_ID,
