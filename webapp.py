@@ -4,7 +4,7 @@
 
 실행:
     python3 webapp.py
-그다음 브라우저에서 http://127.0.0.1:5000 접속.
+그다음 브라우저에서 http://127.0.0.1:5050 접속.
 """
 
 from __future__ import annotations
@@ -380,10 +380,15 @@ def api_schedule():
 
 
 if __name__ == "__main__":
+    import os
+
+    # 포트는 환경변수 PORT로 바꿀 수 있음. 기본 5050
+    # (5000은 macOS의 AirPlay 수신 기능과 충돌하므로 피함)
+    port = int(os.getenv("PORT", "5050"))
     print("=" * 50)
     print("  스레드 자동 업로드 웹 UI")
     print("  브라우저에서 아래 주소를 여세요:")
-    print("  👉 http://127.0.0.1:5000")
+    print(f"  👉 http://127.0.0.1:{port}")
     print("  (종료하려면 이 창에서 Ctrl+C)")
     print("=" * 50)
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=port, debug=False)
