@@ -67,6 +67,12 @@ class SettingsReq(BaseModel):
 # --------------------------------------------------------------------------- #
 # 설정 / 계정
 # --------------------------------------------------------------------------- #
+@app.get("/api/categories")
+def get_categories():
+    from instagram_auto.topics_library import TOPICS
+    return TOPICS
+
+
 @app.get("/api/settings")
 def get_settings():
     return settings_mod.masked_settings()

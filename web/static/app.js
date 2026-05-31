@@ -29,6 +29,50 @@ document.querySelectorAll(".tab").forEach((btn) => {
   };
 });
 
+// ---- 카테고리/주제 객관식 ----
+let CATS = {};
+const CUSTOM = "✏️ 직접 입력";
+
+async function loadCategories() {
+  try {
+    CATS = await api("/api/categories");
+  } catch (e) {
+    CATS = {};
+  }
+  const cat = $("category");
+  cat.innerHTML = "";
+  Object.keys(CATS).forEach((c) => {
+    const o = document.createElement("option");
+    o.value = c; o.textContent = c;
+    cat.appendChild(o);
+  });
+  cat.onchange = fillTopics;
+  fillTopics();
+}
+
+function fillTopics() {
+  const sel = $("topic-select");
+  sel.innerHTML = "";
+  (CATS[$("category").value] || []).forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t; o.textContent = t;
+    sel.appendChild(o);
+  });
+  const c = document.createElement("option");
+  c.value = CUSTOM; c.textContent = CUSTOM;
+  sel.appendChild(c);
+  sel.onchange = () => {
+    $("topic").style.display = sel.value === CUSTOM ? "block" : "none";
+  };
+  sel.onchange();
+}
+
+function selectedTopic() {
+  const sel = $("topic-select");
+  if (sel.value === CUSTOM) return $("topic").value.trim();
+  return sel.value;
+}
+
 // ---- 설정 로드/저장 ----
 const SETTING_IDS = [
   "publisher", "ig_graph_access_token", "ig_graph_user_id",
@@ -107,8 +151,8 @@ $("btn-generate").onclick = generate;
 $("btn-regen").onclick = generate;
 
 async function generate() {
-  const topic = $("topic").value.trim();
-  if (!topic) return toast("주제를 입력하세요", "err");
+  const topic = selectedTopic();
+  if (!topic) return toast("주제를 선택하거나 입력하세요", "err");
   const btn = $("btn-generate");
   btn.disabled = true;
   btn.textContent = "생성 중... (10~30초)";
@@ -186,4 +230,5 @@ $("btn-publish").onclick = async () => {
 }
 
 // ---- 초기화 ----
+loadCategories();
 loadSettings();

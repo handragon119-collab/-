@@ -22,8 +22,17 @@
     <div class="grid">
       <div class="card">
         <h2>1. 콘텐츠 만들기</h2>
-        <label>주제</label>
-        <input id="topic" type="text" placeholder="예) 사회초년생 돈 관리 5원칙" />
+        <div class="row">
+          <div>
+            <label>카테고리</label>
+            <select id="category"></select>
+          </div>
+          <div class="grow">
+            <label>주제 (키워드)</label>
+            <select id="topic-select"></select>
+          </div>
+        </div>
+        <input id="topic" type="text" placeholder="직접 입력할 주제" style="display:none" />
 
         <div class="row">
           <div>
@@ -52,17 +61,16 @@
         <div class="row">
           <div>
             <label>시리즈 번호 (선택)</label>
-            <input id="number" type="number" placeholder="예) 1 → NO.01" min="1" />
-          </div>
-          <div class="grow">
-            <label>카테고리 키커 (선택)</label>
-            <input id="kicker" type="text" placeholder="예) 금융 가이드" />
+            <input id="number" type="number" placeholder="1 → NO.01" min="1" />
           </div>
           <div class="grow">
             <label>계정 핸들</label>
             <input id="brand" type="text" placeholder="@my_account" />
           </div>
         </div>
+
+        <label>카테고리 키커 (선택)</label>
+        <input id="kicker" type="text" placeholder="예) 금융 가이드" />
 
         <label>톤앤매너 (선택)</label>
         <input id="tone" type="text" placeholder="예) 친근하고 신뢰감 있는" />
