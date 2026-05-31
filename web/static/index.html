@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>인스타 자동발행 스튜디오</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">📸 인스타 자동발행 스튜디오</div>
+    <div id="conn-badge" class="badge badge-off">계정 미연결</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="create">콘텐츠 생성 · 발행</button>
+    <button class="tab" data-tab="account">계정 연결 · 설정</button>
+  </nav>
+
+  <!-- ================= 생성/발행 탭 ================= -->
+  <section id="tab-create" class="panel active">
+    <div class="grid">
+      <div class="card">
+        <h2>1. 콘텐츠 만들기</h2>
+        <label>주제</label>
+        <input id="topic" type="text" placeholder="예) 사회초년생 돈 관리 5원칙" />
+
+        <div class="row">
+          <div>
+            <label>형식</label>
+            <select id="mode">
+              <option value="cardnews">카드뉴스 (캐러셀)</option>
+              <option value="photo">단일 AI 사진</option>
+            </select>
+          </div>
+          <div>
+            <label>테마</label>
+            <select id="theme">
+              <option value="navy">navy</option>
+              <option value="mint">mint</option>
+              <option value="coral">coral</option>
+              <option value="cream">cream</option>
+            </select>
+          </div>
+          <div>
+            <label>본문 카드 수</label>
+            <input id="cards" type="number" value="5" min="3" max="9" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="grow">
+            <label>톤앤매너 (선택)</label>
+            <input id="tone" type="text" placeholder="예) 친근하고 신뢰감 있는" />
+          </div>
+          <div class="grow">
+            <label>계정 핸들 (카드 하단)</label>
+            <input id="brand" type="text" placeholder="@my_account" />
+          </div>
+        </div>
+
+        <button id="btn-generate" class="btn btn-primary">✨ 생성하기</button>
+        <p class="hint">생성에는 캡션용 LLM(Gemini/Claude) 키가 필요합니다. 카드뉴스는 이미지 API 비용이 없습니다.</p>
+      </div>
+
+      <div class="card">
+        <h2>2. 미리보기 · 발행</h2>
+        <div id="preview-empty" class="empty">왼쪽에서 주제를 입력하고 생성하면<br/>여기에 카드 미리보기가 나타납니다.</div>
+        <div id="preview" class="preview hidden">
+          <div id="slides" class="slides"></div>
+          <label>캡션 (수정 가능)</label>
+          <textarea id="caption" rows="7"></textarea>
+          <div class="row">
+            <button id="btn-publish" class="btn btn-publish">🚀 지금 발행</button>
+            <button id="btn-regen" class="btn btn-ghost">다시 생성</button>
+          </div>
+          <p class="hint">발행하려면 [계정 연결] 탭에서 인스타 계정이 연결되어 있어야 합니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 계정/설정 탭 ================= -->
+  <section id="tab-account" class="panel">
+    <div class="grid">
+      <div class="card">
+        <h2>인스타그램 계정 연결</h2>
+        <p class="hint">권장: 비즈니스/크리에이터 계정 + 공식 Graph API (안전하고 캐러셀 지원).</p>
+        <label>발행 방식</label>
+        <select id="s-publisher">
+          <option value="graph">graph (비즈니스 · 공식 API)</option>
+          <option value="instagrapi">instagrapi (개인 계정 · 비공식)</option>
+          <option value="none">none (발행 안 함)</option>
+        </select>
+
+        <div class="graph-fields">
+          <label>Graph API 액세스 토큰</label>
+          <input id="s-ig_graph_access_token" type="password" placeholder="EAA..." />
+          <label>인스타그램 비즈니스 계정 ID</label>
+          <input id="s-ig_graph_user_id" type="text" placeholder="178..." />
+        </div>
+
+        <button id="btn-test" class="btn btn-ghost">🔌 연결 테스트</button>
+        <div id="test-result" class="result"></div>
+      </div>
+
+      <div class="card">
+        <h2>생성 · 호스팅 API 키</h2>
+        <label>캡션 생성 제공자</label>
+        <select id="s-caption_provider">
+          <option value="gemini">Gemini (무료 등급 가능)</option>
+          <option value="anthropic">Claude (Anthropic)</option>
+        </select>
+        <label>Gemini API 키</label>
+        <input id="s-gemini_api_key" type="password" placeholder="Google AI Studio 키" />
+        <label>Anthropic API 키 (Claude 사용 시)</label>
+        <input id="s-anthropic_api_key" type="password" placeholder="sk-ant-..." />
+
+        <hr/>
+        <label>이미지 공개 호스팅 (Graph API 필수)</label>
+        <select id="s-image_host">
+          <option value="imgbb">imgbb (무료)</option>
+          <option value="base_url">내 서버/S3 URL</option>
+        </select>
+        <label>imgbb API 키</label>
+        <input id="s-imgbb_api_key" type="password" placeholder="imgbb 키" />
+
+        <button id="btn-save" class="btn btn-primary">💾 설정 저장</button>
+        <div id="save-result" class="result"></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -38,7 +38,22 @@ POLLINATIONS_TOKEN=     # auth.pollinations.ai 에서 무료 발급 (권장)
 
 > ⚠️ 무료 등급은 **속도·일일 한도 제한**이 있고, Pollinations는 익명 호출 시 403이 날 수 있어 **무료 토큰 발급을 권장**합니다. 완전히 안정적인 무제한 무료 이미지 API는 없으므로, 대량 운영 시엔 로컬 Stable Diffusion 또는 유료 API가 더 적합합니다.
 
-## 🚀 빠른 시작
+## 🖥️ 웹 UI (자동발행 스튜디오)
+
+브라우저에서 주제 입력 → 카드 미리보기 → 캡션 편집 → **버튼 한 번으로 발행**.
+
+```bash
+pip install -r requirements.txt
+python -m web.server          # http://localhost:8000 접속
+```
+
+- **콘텐츠 생성·발행 탭**: 주제/형식/테마/카드수 입력 → 생성 → 미리보기 → [지금 발행]
+- **계정 연결·설정 탭**: 인스타 비즈니스 계정(Graph API 토큰·ID) + Gemini/imgbb 키 입력 → [연결 테스트] → 상단에 `@계정 연결됨` 표시
+- 자격증명은 로컬 `web_settings.json`에 저장됩니다(.gitignore 처리).
+
+> ⚠️ **로컬 전용입니다.** API 키·토큰을 다루므로 인증 없이 공개 인터넷(외부 도메인)에 그대로 띄우지 마세요. 외부 배포 시 로그인/HTTPS를 반드시 추가하세요.
+
+## 🚀 빠른 시작 (CLI)
 
 ```bash
 # 1. 의존성 설치

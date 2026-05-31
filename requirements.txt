@@ -13,3 +13,7 @@ google-genai>=1.0.0        # Gemini 2.5 Flash Image (Nano Banana) 사용 (기본
 # instagrapi>=2.1.0        # (선택) 일반 개인 계정 비공식 API 업로드 시
 # cloudinary>=1.40.0       # (선택) 이미지 호스팅을 Cloudinary로 할 경우
 reportlab>=4.0.0          # 기획서 PDF 생성(scripts/build_week_plan_pdf.py)
+
+# --- 웹 UI (자동발행 스튜디오) ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
