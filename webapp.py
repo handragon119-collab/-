@@ -1,0 +1,236 @@
+"""스레드 자동 업로드 — 웹 UI.
+
+터미널 대신 브라우저에서 버튼으로 조작합니다.
+
+실행:
+    python3 webapp.py
+그다음 브라우저에서 http://127.0.0.1:5000 접속.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from pathlib import Path
+
+from flask import Flask, jsonify, render_template, request
+
+import config
+from threads_auto import safety
+from threads_auto.content_generator import ContentGenerator
+from threads_auto.threads_client import ThreadsClient, ThreadsError
+
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    _HAS_APS = True
+except Exception:  # APScheduler 없으면 스케줄 기능만 비활성화
+    _HAS_APS = False
+
+app = Flask(__name__)
+
+LOG_PATH = Path("data/posted_log.jsonl")
+TOPICS_PATH = Path("topics.txt")
+ENV_PATH = Path(".env")
+
+# ── 백그라운드 스케줄러 (자동 게시) ──
+_scheduler = None
+if _HAS_APS:
+    _scheduler = BackgroundScheduler(timezone=config.TIMEZONE)
+    _scheduler.start()
+
+
+def _update_env(key: str, value: str) -> None:
+    """.env 파일에서 key=value 한 줄을 갱신(없으면 추가)합니다."""
+    lines = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else []
+    found = False
+    for i, line in enumerate(lines):
+        if line.strip().startswith(f"{key}="):
+            lines[i] = f"{key}={value}"
+            found = True
+            break
+    if not found:
+        lines.append(f"{key}={value}")
+    ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _scheduled_job() -> None:
+    """스케줄러가 호출하는 자동 게시 작업."""
+    from threads_auto.runner import run_once
+
+    try:
+        run_once()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[스케줄 작업 오류] {exc}")
+
+
+# ──────────────────────────── 페이지 ────────────────────────────
+
+
+@app.get("/")
+def index():
+    return render_template("index.html")
+
+
+# ──────────────────────────── API ────────────────────────────
+
+
+@app.get("/api/status")
+def api_status():
+    """키 설정 여부, 오늘 게시 수, 스케줄 상태를 반환합니다."""
+    posted = safety.count_posts_last_24h()
+    job = _scheduler.get_job("auto_post") if _scheduler else None
+    return jsonify(
+        {
+            "has_anthropic": bool(config.ANTHROPIC_API_KEY),
+            "has_threads": bool(config.THREADS_USER_ID and config.THREADS_ACCESS_TOKEN),
+            "model": config.CLAUDE_MODEL,
+            "posted_24h": posted,
+            "daily_limit": config.DAILY_POST_LIMIT,
+            "schedule_supported": _HAS_APS,
+            "schedule_running": bool(job),
+            "schedule_cron": config.SCHEDULE_CRON,
+            "schedule_next": str(job.next_run_time) if job else None,
+            "timezone": config.TIMEZONE,
+        }
+    )
+
+
+@app.post("/api/generate")
+def api_generate():
+    """AI로 글을 생성합니다(게시 안 함)."""
+    try:
+        config.require_anthropic()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    data = request.get_json(silent=True) or {}
+    topic = (data.get("topic") or "").strip() or None
+    try:
+        gen = ContentGenerator(
+            api_key=config.ANTHROPIC_API_KEY,
+            model=config.CLAUDE_MODEL,
+            persona=config.THREADS_PERSONA,
+        )
+        if topic:
+            text = gen.generate(topic)
+        else:
+            text, topic = gen.generate_from_random_topic()
+        return jsonify({"ok": True, "text": text, "topic": topic, "length": len(text)})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
+
+
+@app.post("/api/post")
+def api_post():
+    """입력된 글을 스레드에 게시합니다."""
+    try:
+        config.require_threads()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "게시할 글이 비어 있습니다."}), 400
+    if len(text) > 500:
+        return jsonify({"ok": False, "error": f"글이 너무 깁니다({len(text)}자). 500자 이내로 줄여주세요."}), 400
+
+    ok, posted = safety.check_daily_limit(config.DAILY_POST_LIMIT)
+    if not ok:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": f"최근 24시간 게시 수({posted})가 한도({config.DAILY_POST_LIMIT})에 도달했습니다.",
+                }
+            ),
+            429,
+        )
+
+    try:
+        client = ThreadsClient(config.THREADS_USER_ID, config.THREADS_ACCESS_TOKEN)
+        post_id = client.post_text(text)
+    except ThreadsError as exc:
+        return jsonify({"ok": False, "error": f"게시 실패: {exc}"}), 502
+
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "time": datetime.now().isoformat(timespec="seconds"),
+        "topic": data.get("topic"),
+        "text": text,
+        "post_id": post_id,
+    }
+    with LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    return jsonify({"ok": True, "post_id": post_id})
+
+
+@app.get("/api/topics")
+def api_get_topics():
+    content = TOPICS_PATH.read_text(encoding="utf-8") if TOPICS_PATH.exists() else ""
+    return jsonify({"ok": True, "content": content})
+
+
+@app.post("/api/topics")
+def api_save_topics():
+    data = request.get_json(silent=True) or {}
+    content = data.get("content", "")
+    TOPICS_PATH.write_text(content, encoding="utf-8")
+    return jsonify({"ok": True})
+
+
+@app.get("/api/history")
+def api_history():
+    items = []
+    if LOG_PATH.exists():
+        for line in LOG_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                items.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    items.reverse()  # 최신순
+    return jsonify({"ok": True, "items": items[:100]})
+
+
+@app.post("/api/schedule")
+def api_schedule():
+    """자동 스케줄을 켜거나 끕니다."""
+    if not _HAS_APS:
+        return jsonify({"ok": False, "error": "APScheduler가 설치되지 않았습니다."}), 400
+
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")  # "start" | "stop"
+    cron = (data.get("cron") or config.SCHEDULE_CRON).strip()
+
+    if action == "stop":
+        if _scheduler.get_job("auto_post"):
+            _scheduler.remove_job("auto_post")
+        return jsonify({"ok": True, "running": False})
+
+    if action == "start":
+        try:
+            trigger = CronTrigger.from_crontab(cron, timezone=config.TIMEZONE)
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({"ok": False, "error": f"잘못된 스케줄 형식입니다: {exc}"}), 400
+        _update_env("SCHEDULE_CRON", cron)
+        config.SCHEDULE_CRON = cron
+        _scheduler.add_job(_scheduled_job, trigger, id="auto_post", replace_existing=True)
+        job = _scheduler.get_job("auto_post")
+        return jsonify({"ok": True, "running": True, "next": str(job.next_run_time)})
+
+    return jsonify({"ok": False, "error": "알 수 없는 동작입니다."}), 400
+
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print("  스레드 자동 업로드 웹 UI")
+    print("  브라우저에서 아래 주소를 여세요:")
+    print("  👉 http://127.0.0.1:5000")
+    print("  (종료하려면 이 창에서 Ctrl+C)")
+    print("=" * 50)
+    app.run(host="127.0.0.1", port=5000, debug=False)
