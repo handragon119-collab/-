@@ -59,14 +59,11 @@ def _via_instagrapi(image_path: str, caption: str, config: Config) -> str:
 # --------------------------------------------------------------------------- #
 def _via_graph(image_path: str, caption: str, config: Config) -> str:
     config.require("ig_graph_access_token", "ig_graph_user_id")
-    if not config.public_image_base_url:
-        raise RuntimeError(
-            "Graph API 는 공개 이미지 URL 이 필요합니다. PUBLIC_IMAGE_BASE_URL 을 설정하거나 "
-            "이미지를 공개 스토리지(S3 등)에 올린 뒤 그 URL을 사용하세요."
-        )
 
-    base = config.public_image_base_url.rstrip("/")
-    image_url = f"{base}/{image_path.split('/')[-1]}"
+    # 로컬 이미지를 공개 URL로 호스팅 (imgbb 등) → Graph API가 가져갈 수 있게 함
+    from .image_host import to_public_url
+
+    image_url = to_public_url(image_path, config)
     api = f"https://graph.facebook.com/v21.0/{config.ig_graph_user_id}"
     token = config.ig_graph_access_token
 

@@ -58,25 +58,38 @@ def _openai(prompt: str, config: Config, out_path: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Google Gemini
+# Google Gemini (gemini-2.5-flash-image / "Nano Banana", 신 google-genai SDK)
 # --------------------------------------------------------------------------- #
 def _gemini(prompt: str, config: Config, out_path: str) -> str:
     config.require("gemini_api_key")
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
     except ImportError as e:
         raise RuntimeError(
-            "google-generativeai 패키지가 필요합니다: pip install google-generativeai"
+            "google-genai 패키지가 필요합니다: pip install google-genai"
         ) from e
 
-    genai.configure(api_key=config.gemini_api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash-exp-image-generation")
-    response = model.generate_content(prompt)
-    for part in response.candidates[0].content.parts:
-        if getattr(part, "inline_data", None) and part.inline_data.data:
-            _write_bytes(out_path, part.inline_data.data)
-            return out_path
-    raise RuntimeError("Gemini 응답에 이미지 데이터가 없습니다.")
+    client = genai.Client(api_key=config.gemini_api_key)
+    response = client.models.generate_content(
+        model=config.gemini_image_model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=types.ImageConfig(aspect_ratio=config.image_aspect_ratio),
+        ),
+    )
+
+    candidates = getattr(response, "candidates", None) or []
+    for cand in candidates:
+        for part in cand.content.parts:
+            inline = getattr(part, "inline_data", None)
+            if inline and inline.data:
+                _write_bytes(out_path, inline.data)
+                return out_path
+    raise RuntimeError(
+        "Gemini 응답에 이미지 데이터가 없습니다. (프롬프트가 정책에 막혔거나 모델명이 잘못되었을 수 있습니다)"
+    )
 
 
 # --------------------------------------------------------------------------- #

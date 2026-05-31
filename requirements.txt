@@ -2,12 +2,13 @@
 anthropic>=0.40.0          # Claude로 캡션/해시태그 생성
 python-dotenv>=1.0.0       # .env 환경변수 로드
 Pillow>=10.0.0             # 로컬 이미지 폴백/후처리
-requests>=2.31.0
+requests>=2.31.0           # imgbb 업로드 / Graph API 호출
 
-# --- 이미지 생성 (택1, 선택사항) ---
-openai>=1.40.0             # DALL·E 3 / gpt-image-1 사용 시
-google-generativeai>=0.8.0 # Gemini 이미지 생성 사용 시
+# --- 이미지 생성 ---
+google-genai>=1.0.0        # Gemini 2.5 Flash Image (Nano Banana) 사용 (기본)
+# openai>=1.40.0           # (선택) DALL·E 3 / gpt-image-1 사용 시
 
-# --- 인스타그램 업로드 (택1) ---
-instagrapi>=2.1.0          # 일반 계정 비공식 API 업로드 시
-# Graph API 방식은 requests만 있으면 됨 (추가 의존성 없음)
+# --- 인스타그램 업로드 ---
+# Graph API(비즈니스) 방식은 requests 만 있으면 됩니다. 추가 의존성 없음.
+# instagrapi>=2.1.0        # (선택) 일반 개인 계정 비공식 API 업로드 시
+# cloudinary>=1.40.0       # (선택) 이미지 호스팅을 Cloudinary로 할 경우

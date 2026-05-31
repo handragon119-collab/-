@@ -36,6 +36,13 @@ class Config:
         default_factory=lambda: _get("OPENAI_IMAGE_MODEL", "gpt-image-1")
     )
     gemini_api_key: str = field(default_factory=lambda: _get("GEMINI_API_KEY"))
+    gemini_image_model: str = field(
+        default_factory=lambda: _get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+    )
+    # 인스타그램 피드 기본은 정사각형(1:1)
+    image_aspect_ratio: str = field(
+        default_factory=lambda: _get("IMAGE_ASPECT_RATIO", "1:1")
+    )
 
     # 인스타그램 업로드
     publisher: str = field(default_factory=lambda: _get("PUBLISHER", "none").lower())
@@ -48,6 +55,9 @@ class Config:
     public_image_base_url: str = field(
         default_factory=lambda: _get("PUBLIC_IMAGE_BASE_URL")
     )
+    # Graph API용 공개 URL 생성 방식: imgbb | cloudinary | base_url
+    image_host: str = field(default_factory=lambda: _get("IMAGE_HOST", "imgbb").lower())
+    imgbb_api_key: str = field(default_factory=lambda: _get("IMGBB_API_KEY"))
 
     # 출력 디렉터리
     output_dir: str = field(default_factory=lambda: _get("OUTPUT_DIR", "output"))
