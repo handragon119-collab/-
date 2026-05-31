@@ -8,3 +8,5 @@ ig_session_*.json
 web_settings.json
 *.png
 *.ttf
+web_server.log
+web_server.pid
