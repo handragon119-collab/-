@@ -13,6 +13,7 @@ from __future__ import annotations
 import sys
 import uuid
 from pathlib import Path
+from typing import Optional
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -47,16 +48,16 @@ class GenerateReq(BaseModel):
     mode: str = "cardnews"
     theme: str = "navy"
     cards: int = 6
-    tone: str | None = None
-    brand_handle: str | None = None
+    tone: Optional[str] = None
+    brand_handle: Optional[str] = None
     agentic: bool = False
-    number: int | None = None
-    kicker: str | None = None
+    number: Optional[int] = None
+    kicker: Optional[str] = None
 
 
 class PublishReq(BaseModel):
     job_id: str
-    caption: str | None = None
+    caption: Optional[str] = None
 
 
 class SettingsReq(BaseModel):
