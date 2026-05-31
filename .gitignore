@@ -7,3 +7,4 @@ venv/
 ig_session_*.json
 web_settings.json
 *.png
+*.ttf
