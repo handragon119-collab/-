@@ -1,1 +1,128 @@
-# -
+# 스레드(Threads) 글 업로드 자동화
+
+Meta의 **공식 Threads API**로 글을 자동 게시하고, 글 내용은 **Claude AI**가 생성하는 완전 자동화 프로그램입니다.
+수동 1회 실행과 스케줄(매일 정해진 시간 등) 자동 실행을 모두 지원하며, 밴·노출제한 위험을 줄이는 안전장치를 내장하고 있습니다.
+
+## 동작 방식
+
+```
+주제(topics.txt) ─▶ Claude API로 글 생성 ─▶ (중복·한도 검사) ─▶ Threads 공식 API로 게시 ─▶ 기록(data/posted_log.jsonl)
+```
+
+## 1. 설치
+
+```bash
+pip install -r requirements.txt
+```
+
+## 2. 사전 준비 (API 키 발급)
+
+### (1) Threads 공식 API
+1. https://developers.facebook.com 에서 앱을 만듭니다.
+2. **Threads API** 사용 설정 후, 본인 스레드 계정으로 인증합니다.
+3. 다음 두 값을 발급받습니다.
+   - **사용자 ID** (`THREADS_USER_ID`)
+   - **장기 액세스 토큰** (`THREADS_ACCESS_TOKEN`) — 게시 권한(`threads_content_publish`) 포함
+   - 자세한 절차: https://developers.facebook.com/docs/threads
+
+### (2) Claude API
+- https://console.anthropic.com 에서 API 키(`ANTHROPIC_API_KEY`)를 발급받습니다.
+
+### (3) .env 파일 작성
+`.env.example`을 복사해 `.env`로 만들고 값을 채웁니다.
+
+```bash
+cp .env.example .env
+# 편집기로 .env 를 열어 키 값을 입력
+```
+
+> ⚠️ `.env`에는 비밀 키가 들어가므로 절대 커밋하지 마세요. (`.gitignore`에 이미 제외되어 있습니다.)
+
+## 3. 사용법
+
+### 미리보기 (게시 없이 AI 생성 결과만 확인) — `ANTHROPIC_API_KEY`만 있어도 됨
+```bash
+python main.py post --dry-run
+```
+
+### 1회 게시 (AI가 글 생성 후 바로 게시)
+```bash
+python main.py post
+```
+
+### 직접 쓴 글 게시
+```bash
+python main.py post --text "오늘 날씨가 정말 좋네요."
+```
+
+### 스케줄 자동 실행 (예: 매일 오전 9시)
+```bash
+python main.py schedule
+```
+- 실행 시각은 `.env`의 `SCHEDULE_CRON`(cron 표현식)으로 조절합니다.
+  - 예: `0 9 * * *` = 매일 09:00, `0 9,18 * * *` = 매일 09:00·18:00, `0 */6 * * *` = 6시간마다
+- 프로그램이 계속 켜져 있어야 합니다. 서버에서 24시간 돌리려면 아래 "상시 실행" 참고.
+
+## 4. 주제 관리
+
+`topics.txt`에 한 줄에 하나씩 주제를 적어두면, 실행할 때마다 무작위로 하나를 골라 글을 만듭니다.
+주제 줄이 비어 있으면 AI가 자유 주제로 작성합니다.
+
+## 5. 설정값 (.env)
+
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `THREADS_USER_ID` | 스레드 사용자 ID | (필수) |
+| `THREADS_ACCESS_TOKEN` | 스레드 액세스 토큰 | (필수) |
+| `ANTHROPIC_API_KEY` | Claude API 키 | (필수) |
+| `CLAUDE_MODEL` | 글 생성 모델 | `claude-opus-4-8` |
+| `THREADS_PERSONA` | 글의 톤/페르소나 | 친근/진솔 톤 |
+| `POSTS_PER_RUN` | 1회 실행 시 게시 개수 | `1` |
+| `SCHEDULE_CRON` | 스케줄 cron 표현식 | `0 9 * * *` |
+| `TIMEZONE` | 타임존 | `Asia/Seoul` |
+| `DAILY_POST_LIMIT` | 24시간 내 최대 게시 수 | `200` |
+| `MIN_POST_INTERVAL_SECONDS` | 글 사이 최소 대기(초) | `60` |
+| `SCHEDULE_JITTER_MINUTES` | 스케줄 랜덤 지터(분) | `20` |
+| `DUPLICATE_SIMILARITY_THRESHOLD` | 중복 판정 유사도 | `0.8` |
+| `DUPLICATE_LOOKBACK` | 중복 비교할 최근 글 수 | `30` |
+
+## 6. ⚠️ 밴·노출제한 위험과 안전장치
+
+자동 게시 + AI 생성 글은 Meta 정책 위반 시 **계정 정지·노출제한(섀도우밴)** 위험이 있습니다.
+조사 결과 확인된 주요 위험과, 이 프로그램이 내장한 대응책은 다음과 같습니다.
+
+| 위험 요소 | 근거 | 내장 안전장치 |
+|-----------|------|----------------|
+| **API 게시 한도 초과** — 1프로필당 24시간 롤링 윈도우로 **게시 250 / 답글 1,000 / 삭제 100** | Threads API 공식 한도 | `DAILY_POST_LIMIT`(기본 200, 한도보다 낮게) 도달 시 자동 중단 |
+| **봇 패턴 탐지** — 매일 같은 초에 일정 간격 게시 | 자동·반복 포스팅은 섀도우밴 트리거 | 스케줄 `SCHEDULE_JITTER_MINUTES` 랜덤 지연 + 글 사이 `MIN_POST_INTERVAL_SECONDS` 간격 |
+| **중복/유사 콘텐츠** — 비슷한 글 반복은 스팸으로 간주 | "유사 글 반복 게시"는 노출 제한 사유 | 최근 글과 유사도 검사 후 자동 재생성 |
+| **편집 없는 AI 티 나는 글** — "게으르고 로봇 같은" 글은 스팸 취급 | 무편집 AI 콘텐츠 남용 = 섀도우밴 위험 | 페르소나/프롬프트로 자연스러운 톤 유도 (완벽 회피는 불가 → 검수 권장) |
+| **액세스 토큰 만료** (약 60일) | 장기 토큰도 갱신 필요 | 만료 전 토큰 재발급 (수동) |
+
+### 추가 운영 수칙 (강력 권장)
+- **처음엔 `--dry-run`으로 톤·품질을 확인**한 뒤 자동화하세요.
+- 하루 게시량을 무리하게 늘리지 마세요. 신규/저활동 계정일수록 **하루 수 개~십여 개 수준**에서 시작해 점진적으로 늘리는 것이 안전합니다. (한도 250은 "넘으면 차단"되는 선이지, "권장량"이 아닙니다.)
+- **AI 환각(사실 오류)**에 주의하고, 시사·민감·의료·금융 주제는 반드시 사람이 검수하세요.
+- 동일 해시태그·링크 도배, "팔로우/댓글 요청" 남발은 노출 감소를 유발하니 피하세요.
+- 같은 글을 다른 SNS와 그대로 복붙하는 것도 노출 제한 사유입니다. (Threads는 네이티브 콘텐츠를 선호)
+- 실시간 잔여 한도는 `GET /{threads-user-id}/threads_publishing_limit`로 확인할 수 있습니다.
+- 게시 한도·정책은 Meta가 예고 없이 변경할 수 있으니 [공식 문서](https://developers.facebook.com/docs/threads)를 주기적으로 확인하세요.
+- **계정 정지 시 복구는 매우 어렵습니다**(이의신청 지연, 거부 시 180일 후 영구삭제 사례). 보수적으로 운영하세요.
+
+## 7. 상시 실행 (서버/백그라운드)
+
+스케줄 모드를 24시간 돌리려면 프로세스가 죽지 않아야 합니다. 예시:
+
+```bash
+# nohup으로 백그라운드 실행
+nohup python main.py schedule > schedule.log 2>&1 &
+```
+
+> 클라우드 컨테이너 환경(예: Claude Code on the web)은 일정 시간 후 종료될 수 있으므로,
+> 상시 자동화가 필요하면 본인 서버나 항상 켜져 있는 머신에서 실행하는 것을 권장합니다.
+
+## 주의사항 요약
+
+- Threads API는 계정당 게시 횟수 제한(rate limit)이 있습니다. 너무 잦은 게시는 피하세요.
+- 자동 생성·게시 결과는 본인 책임 하에 검토·관리하세요.
+- 게시 기록은 `data/posted_log.jsonl`에 남으며, 안전장치(한도·중복 검사)가 이 기록을 기준으로 동작합니다.
