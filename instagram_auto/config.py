@@ -70,8 +70,26 @@ class Config:
     image_host: str = field(default_factory=lambda: _get("IMAGE_HOST", "imgbb").lower())
     imgbb_api_key: str = field(default_factory=lambda: _get("IMGBB_API_KEY"))
 
+    # 콘텐츠 모드: cardnews(카드뉴스 캐러셀) | photo(단일 AI 사진)
+    content_mode: str = field(
+        default_factory=lambda: _get("CONTENT_MODE", "cardnews").lower()
+    )
+    # 카드뉴스 설정
+    card_count: int = field(default_factory=lambda: int(_get("CARD_COUNT", "6") or 6))
+    card_size: str = field(default_factory=lambda: _get("CARD_SIZE", "1080x1350"))
+    card_theme: str = field(default_factory=lambda: _get("CARD_THEME", "navy").lower())
+    brand_handle: str = field(default_factory=lambda: _get("BRAND_HANDLE"))
+
     # 출력 디렉터리
     output_dir: str = field(default_factory=lambda: _get("OUTPUT_DIR", "output"))
+
+    @property
+    def card_dimensions(self) -> tuple[int, int]:
+        try:
+            w, h = self.card_size.lower().split("x")
+            return int(w), int(h)
+        except Exception:
+            return (1080, 1350)
 
     def require(self, *names: str) -> None:
         """필수 설정값이 비어있으면 친절한 에러를 발생시킨다."""
