@@ -74,3 +74,24 @@ def create_image_url(openai_key: str, imgur_client_id: str, prompt: str,
     """프롬프트 → AI 이미지 생성 → Imgur 업로드 → 공개 URL 반환 (한 번에)."""
     image_bytes = generate_image(openai_key, prompt, model=model, size=size)
     return upload_to_imgur(imgur_client_id, image_bytes)
+
+
+def create_image_url_auto(openai_key: str, imgur_client_id: str, prompt: str,
+                          model: str = "gpt-image-1", size: str = "1024x1024") -> str:
+    """프롬프트 → AI 이미지 생성 → (Imgur 또는 cloudflared 터널) 호스팅 → 공개 URL.
+
+    Imgur Client-ID가 있으면 Imgur를 쓰고, 없으면 cloudflared 터널로 직접 호스팅합니다.
+    """
+    image_bytes = generate_image(openai_key, prompt, model=model, size=size)
+    if imgur_client_id:
+        return upload_to_imgur(imgur_client_id, image_bytes)
+
+    # Imgur 키가 없으면 터널로 직접 호스팅
+    from threads_auto import tunnel_host
+
+    try:
+        return tunnel_host.host_image(image_bytes)
+    except tunnel_host.TunnelError as exc:
+        raise ImageError(
+            f"이미지 호스팅 실패(터널): {exc}. cloudflared 설치 또는 IMGUR_CLIENT_ID를 확인하세요."
+        ) from exc

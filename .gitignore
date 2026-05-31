@@ -11,4 +11,5 @@ env/
 
 # 게시 기록/로그
 data/posted_log.jsonl
+data/images/
 *.log

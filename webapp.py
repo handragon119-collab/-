@@ -19,7 +19,7 @@ import config
 from threads_auto import safety
 from threads_auto.content_generator import ContentGenerator
 from threads_auto.threads_client import ThreadsClient, ThreadsError
-from threads_auto.image_generator import ImageError, create_image_url
+from threads_auto.image_generator import ImageError, create_image_url_auto
 
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -144,7 +144,7 @@ def api_generate_image():
             persona=config.THREADS_PERSONA,
         )
         prompt = gen.generate_image_prompt(text)
-        image_url = create_image_url(
+        image_url = create_image_url_auto(
             config.OPENAI_API_KEY,
             config.IMGUR_CLIENT_ID,
             prompt,

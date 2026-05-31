@@ -58,15 +58,31 @@ OPENAI_IMAGE_SIZE = os.getenv("OPENAI_IMAGE_SIZE", "1024x1024").strip()
 IMGUR_CLIENT_ID = os.getenv("IMGUR_CLIENT_ID", "").strip()
 
 
+def _tunnel_available() -> bool:
+    """cloudflared 터널 호스팅이 가능한지(설치 여부)."""
+    try:
+        from threads_auto import tunnel_host
+
+        return tunnel_host.is_available()
+    except Exception:
+        return False
+
+
 def require_image() -> None:
-    """이미지 자동 생성에 필요한 값이 있는지 확인합니다."""
+    """이미지 자동 생성에 필요한 값이 있는지 확인합니다.
+
+    OpenAI 키는 필수. 호스팅은 Imgur 키 또는 cloudflared 터널 중 하나면 됩니다.
+    """
     _require("OPENAI_API_KEY")
-    _require("IMGUR_CLIENT_ID")
+    if not IMGUR_CLIENT_ID and not _tunnel_available():
+        raise RuntimeError(
+            "이미지를 올릴 방법이 없습니다. IMGUR_CLIENT_ID를 넣거나 cloudflared를 설치하세요."
+        )
 
 
 def has_image_support() -> bool:
-    """이미지 생성 키가 모두 설정돼 있는지 여부."""
-    return bool(OPENAI_API_KEY and IMGUR_CLIENT_ID)
+    """이미지 생성이 가능한지(OpenAI 키 + 호스팅 수단) 여부."""
+    return bool(OPENAI_API_KEY) and (bool(IMGUR_CLIENT_ID) or _tunnel_available())
 
 
 def require_threads() -> None:

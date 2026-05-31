@@ -10,7 +10,7 @@ import config
 from threads_auto import safety
 from threads_auto.content_generator import ContentGenerator
 from threads_auto.threads_client import ThreadsClient
-from threads_auto.image_generator import ImageError, create_image_url
+from threads_auto.image_generator import ImageError, create_image_url_auto
 
 LOG_PATH = safety.LOG_PATH
 
@@ -98,7 +98,7 @@ def run_once(text: str | None = None, dry_run: bool = False,
             try:
                 print("  🎨 이미지 생성 중…")
                 prompt = generator.generate_image_prompt(body)
-                image_url = create_image_url(
+                image_url = create_image_url_auto(
                     config.OPENAI_API_KEY,
                     config.IMGUR_CLIENT_ID,
                     prompt,
