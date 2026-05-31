@@ -12,3 +12,4 @@ google-genai>=1.0.0        # Gemini 2.5 Flash Image (Nano Banana) 사용 (기본
 # Graph API(비즈니스) 방식은 requests 만 있으면 됩니다. 추가 의존성 없음.
 # instagrapi>=2.1.0        # (선택) 일반 개인 계정 비공식 API 업로드 시
 # cloudinary>=1.40.0       # (선택) 이미지 호스팅을 Cloudinary로 할 경우
+reportlab>=4.0.0          # 기획서 PDF 생성(scripts/build_week_plan_pdf.py)
