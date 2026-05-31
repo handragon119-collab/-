@@ -7,6 +7,8 @@
 공식 문서: https://developers.facebook.com/docs/threads
 """
 
+from __future__ import annotations
+
 import time
 
 import requests

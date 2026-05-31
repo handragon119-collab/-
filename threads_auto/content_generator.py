@@ -1,5 +1,7 @@
 """Claude API로 스레드 게시글을 자동 생성합니다."""
 
+from __future__ import annotations
+
 import random
 from pathlib import Path
 

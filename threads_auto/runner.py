@@ -1,5 +1,7 @@
 """글 생성 → 게시 → 기록까지 한 번의 실행 흐름을 담당합니다."""
 
+from __future__ import annotations
+
 import json
 import time
 from datetime import datetime

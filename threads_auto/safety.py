@@ -5,6 +5,8 @@
 - 게시 기록(posted_log.jsonl)을 기준으로 판단
 """
 
+from __future__ import annotations
+
 import json
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
