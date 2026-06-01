@@ -186,7 +186,35 @@ class ThreadsPipeline:
         return data
 
     # ── 3단계: 글쓰기 (반말 바이럴 문체) ──
-    def write(self, topic: str, research: dict, facts: dict, category: str | None = None) -> str:
+    def _examples_block(self, examples: list[str]) -> str:
+        if not examples:
+            return ""
+        joined = "\n———\n".join(examples)
+        return (
+            "\n\n[이 카테고리에서 실제로 잘 먹힌 글 예시들]\n"
+            "아래 예시들의 말투·맞춤법 비틀기·줄바꿈·이모지·해시태그·길이 감을 그대로 배워라.\n"
+            "단, 문장을 절대 복붙하지 말고 이번 주제로 완전히 새로 써라.\n\n"
+            + joined + "\n"
+        )
+
+    def write_styled(self, topic: str, category: str, examples: list[str]) -> str:
+        """리서치 없이, 카테고리 전용 문체 + 예시(few-shot)로 곧장 작성합니다.
+
+        반려동물처럼 고유 말투가 강한 카테고리에 사용 (일반 리서치가 톤을 망치는 것 방지).
+        """
+        system = STYLE_GUIDE + STYLE_BY_CATEGORY.get(category, "")
+        user = (
+            f"[이번에 쓸 주제] {topic}\n"
+            + self._examples_block(examples)
+            + "\n위 예시들의 '느낌'으로, 이 주제에 맞는 새 게시글 한 편을 써라. "
+            "반려동물 계정이면 반드시 반려동물 본인(1인칭) 시점으로, 짧고 통통 튀게. "
+            "예시처럼 애교 말투·이모지·스하리/반하리 같은 표현을 살려라."
+        )
+        text = self._complete(system, user, max_tokens=800)
+        return text[:260].rstrip() if len(text) > 260 else text
+
+    def write(self, topic: str, research: dict, facts: dict,
+              category: str | None = None, examples: list[str] | None = None) -> str:
         brief = [f"주제: {topic}"]
         if research.get("angle"):
             brief.append(f"차별화 각도: {research['angle']}")
@@ -209,7 +237,7 @@ class ThreadsPipeline:
             brief.append("이 글엔 검증된 사실 데이터가 없으니, 수치·단정적 주장은 쓰지 마라.")
 
         system = STYLE_GUIDE + STYLE_BY_CATEGORY.get((category or "").strip(), "")
-        user = "\n".join(brief) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게."
+        user = "\n".join(brief) + self._examples_block(examples or []) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게."
         text = self._complete(system, user, max_tokens=800)
         if len(text) > 260:
             text = text[:260].rstrip()
@@ -276,12 +304,25 @@ class ThreadsPipeline:
 
     # ── 전체 실행 ──
     def run(self, topic: str, category: str | None = None) -> dict:
-        """리서치→(팩트)→글쓰기. {text, meta} 반환."""
+        """리서치→(팩트)→글쓰기. {text, meta} 반환.
+
+        고유 문체 카테고리(반려동물 등)는 리서치를 건너뛰고 예시 기반으로 곧장 작성.
+        """
+        from threads_auto import samples as samples_mod
+
+        cat = (category or "").strip()
+        examples = samples_mod.get_samples(cat, limit=10) if cat else []
+
+        if cat and cat in STYLE_BY_CATEGORY:
+            text = self.write_styled(topic, cat, examples)
+            return {"text": text, "meta": {"angle": "", "sensitivity": "low",
+                                           "sensitivity_note": "", "facts": []}}
+
         research = self.research(topic)
         facts = {"verified_facts": [], "note": ""}
         if research.get("needs_facts"):
             facts = self.factcheck(topic, research.get("angle", ""))
-        text = self.write(topic, research, facts, category=category)
+        text = self.write(topic, research, facts, category=cat, examples=examples)
         return {
             "text": text,
             "meta": {

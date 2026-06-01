@@ -456,6 +456,13 @@ def api_post():
             results.append({"label": a["label"], "ok": False, "error": str(exc)})
 
     success = sum(1 for r in results if r["ok"])
+    # 학습: 게시한 글을 그 카테고리 예시로 저장(다음 생성 때 톤 학습)
+    if success > 0:
+        try:
+            from threads_auto import samples
+            samples.add_sample((data.get("category") or "").strip(), text)
+        except Exception:  # noqa: BLE001
+            pass
     return jsonify({"ok": success > 0, "results": results,
                     "summary": f"{success}/{len(results)} 계정 게시 성공"})
 

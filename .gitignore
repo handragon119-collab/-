@@ -13,4 +13,5 @@ env/
 data/posted_log.jsonl
 data/images/
 data/accounts.json
+data/style_samples.json
 *.log

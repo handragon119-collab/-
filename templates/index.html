@@ -435,7 +435,7 @@ $("postBtn").onclick = async () => {
   if (!confirm(cnt + "개 계정에" + mediaDesc + " 게시할까요?")) return;
   const b = $("postBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>게시 중…';
   try {
-    const r = await api("/api/post", { method: "POST", body: JSON.stringify({ text, image_urls: CUR_IMAGES, video_url: CUR_VIDEO, topic: $("topicInput").value || null, account_ids: ids }) });
+    const r = await api("/api/post", { method: "POST", body: JSON.stringify({ text, image_urls: CUR_IMAGES, video_url: CUR_VIDEO, topic: $("topicInput").value || null, category: SEL_CAT, account_ids: ids }) });
     if (r.ok) { toast("✅ " + (r.summary || "게시 완료!"), "ok"); $("postText").value = ""; $("charCount").textContent = 0; CUR_IMAGES = []; CUR_VIDEO = null; renderMedia(); loadStatus(); }
     else toast(r.error || "게시 실패", "error");
   } catch (e) { toast("오류: " + e, "error"); }
