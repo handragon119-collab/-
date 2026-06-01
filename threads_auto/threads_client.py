@@ -91,3 +91,72 @@ class ThreadsClient:
         creation_id = self.create_image_container(text, image_url)
         time.sleep(wait_seconds)
         return self.publish(creation_id)
+
+    # ── 캐러셀(사진 여러 장) ──
+    def create_carousel_item(self, image_url: str) -> str:
+        """캐러셀에 들어갈 이미지 아이템 컨테이너를 만듭니다."""
+        data = self._post(
+            f"{self.user_id}/threads",
+            {"media_type": "IMAGE", "image_url": image_url, "is_carousel_item": "true"},
+        )
+        item_id = data.get("id")
+        if not item_id:
+            raise ThreadsError(f"캐러셀 아이템 생성 실패: {data}")
+        return item_id
+
+    def post_carousel(self, text: str, image_urls: list[str], wait_seconds: int = 5) -> str:
+        """사진 여러 장을 캐러셀로 게시합니다. (2~20장)"""
+        children = [self.create_carousel_item(u) for u in image_urls]
+        time.sleep(wait_seconds)
+        data = self._post(
+            f"{self.user_id}/threads",
+            {"media_type": "CAROUSEL", "children": ",".join(children), "text": text},
+        )
+        creation_id = data.get("id")
+        if not creation_id:
+            raise ThreadsError(f"캐러셀 컨테이너 생성 실패: {data}")
+        time.sleep(wait_seconds)
+        return self.publish(creation_id)
+
+    # ── 동영상 ──
+    def _container_status(self, creation_id: str) -> str:
+        params = {"fields": "status", "access_token": self.access_token}
+        resp = requests.get(
+            f"{GRAPH_BASE}/{creation_id}", params=params, timeout=self.timeout
+        )
+        if resp.status_code >= 400:
+            return "ERROR"
+        return resp.json().get("status", "")
+
+    def post_video(self, text: str, video_url: str, max_wait: int = 120) -> str:
+        """동영상 글을 게시합니다. 영상 처리가 끝날 때까지 기다린 뒤 게시."""
+        data = self._post(
+            f"{self.user_id}/threads",
+            {"media_type": "VIDEO", "video_url": video_url, "text": text},
+        )
+        creation_id = data.get("id")
+        if not creation_id:
+            raise ThreadsError(f"비디오 컨테이너 생성 실패: {data}")
+        # 영상은 서버 처리 시간이 필요 → FINISHED 될 때까지 폴링
+        waited = 0
+        while waited < max_wait:
+            status = self._container_status(creation_id)
+            if status == "FINISHED":
+                break
+            if status == "ERROR":
+                raise ThreadsError("영상 처리 중 오류가 발생했습니다.")
+            time.sleep(5)
+            waited += 5
+        return self.publish(creation_id)
+
+    def post_media(self, text: str, image_urls: list[str] | None = None,
+                   video_url: str | None = None) -> str:
+        """미디어 종류에 맞춰 게시합니다(자동 분기)."""
+        if video_url:
+            return self.post_video(text, video_url)
+        urls = image_urls or []
+        if len(urls) >= 2:
+            return self.post_carousel(text, urls)
+        if len(urls) == 1:
+            return self.post_image(text, urls[0])
+        return self.post_text(text)

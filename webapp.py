@@ -276,52 +276,87 @@ _MEDIA_TYPES = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
     "webp": "image/webp", "gif": "image/gif",
 }
+_VIDEO_EXTS = {"mp4", "mov", "m4v", "webm", "avi"}
 
 
-@app.post("/api/upload_image")
-def api_upload_image():
-    """사용자가 직접 올린 이미지를 호스팅하고 공개 URL을 반환합니다.
+def _host_bytes(data: bytes, ext: str) -> str:
+    """이미지/영상 바이트를 공개 URL로 호스팅. 영상은 항상 터널 사용."""
+    is_video = ext in _VIDEO_EXTS
+    if config.IMGUR_CLIENT_ID and not is_video:
+        from threads_auto.image_generator import upload_to_imgur
+        return upload_to_imgur(config.IMGUR_CLIENT_ID, data)
+    from threads_auto import tunnel_host
+    return tunnel_host.host_image(data, ext=ext)
 
-    form 필드 write=="1"이면, 그 사진을 보고 AI가 글까지 써서 함께 반환합니다.
-    호스팅은 Imgur 키가 있으면 Imgur, 없으면 cloudflared 터널을 사용합니다.
+
+@app.post("/api/upload_media")
+def api_upload_media():
+    """사진 여러 장 또는 동영상 1개를 업로드합니다.
+
+    form: files[] (여러 개), write=="1"이면 AI가 보고 글까지 작성.
+    반환: {image_urls:[...], video_url, text}
     """
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return jsonify({"ok": False, "error": "이미지 파일이 없습니다."}), 400
+    files = request.files.getlist("files") or ([request.files["file"]] if "file" in request.files else [])
+    files = [f for f in files if f and f.filename]
+    if not files:
+        return jsonify({"ok": False, "error": "파일이 없습니다."}), 400
 
-    data = f.read()
-    if not data:
-        return jsonify({"ok": False, "error": "빈 파일입니다."}), 400
-    if len(data) > 8 * 1024 * 1024:
-        return jsonify({"ok": False, "error": "파일이 너무 큽니다(8MB 이하)."}), 400
-
-    ext = (f.filename.rsplit(".", 1)[-1] if "." in f.filename else "png").lower()
-    media_type = _MEDIA_TYPES.get(ext, "image/png")
     want_write = request.form.get("write") == "1"
+    first_ext = files[0].filename.rsplit(".", 1)[-1].lower() if "." in files[0].filename else ""
+    is_video = first_ext in _VIDEO_EXTS
 
-    # 1) 호스팅 (게시에 쓸 공개 URL)
     try:
-        if config.IMGUR_CLIENT_ID:
-            from threads_auto.image_generator import upload_to_imgur
-            url = upload_to_imgur(config.IMGUR_CLIENT_ID, data)
+        if is_video:
+            f = files[0]
+            data = f.read()
+            if len(data) > 100 * 1024 * 1024:
+                return jsonify({"ok": False, "error": "영상이 너무 큽니다(100MB 이하)."}), 400
+            video_url = _host_bytes(data, first_ext)
+            image_urls = []
+            # 영상 분석용 프레임 추출 → 보관(글쓰기용)
+            frames = []
+            if want_write:
+                import tempfile, os
+                from threads_auto import video_frames
+                with tempfile.NamedTemporaryFile(suffix="." + first_ext, delete=False) as tmp:
+                    tmp.write(data); tmp_path = tmp.name
+                try:
+                    frames = video_frames.extract_frames(tmp_path, max_frames=5)
+                finally:
+                    os.unlink(tmp_path)
         else:
-            from threads_auto import tunnel_host
-            url = tunnel_host.host_image(data, ext=ext)
+            video_url = None
+            image_urls = []
+            frames = []
+            for f in files[:10]:
+                data = f.read()
+                if len(data) > 8 * 1024 * 1024:
+                    return jsonify({"ok": False, "error": f"{f.filename}: 8MB 이하만 가능."}), 400
+                ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else "png"
+                image_urls.append(_host_bytes(data, ext))
+                frames.append((data, _MEDIA_TYPES.get(ext, "image/png")))
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"ok": False, "error": f"이미지 업로드 실패: {exc}"}), 500
+        return jsonify({"ok": False, "error": f"업로드 실패: {exc}"}), 500
 
-    # 2) (선택) 사진을 보고 AI가 글 작성
+    # AI 글 작성
     text = None
     text_error = None
     if want_write:
         try:
             config.require_anthropic()
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            text = pipe.write_from_image(data, media_type)
+            if is_video:
+                imgs = [(fr, "image/jpeg") for fr in frames]
+                text = pipe.write_from_images(imgs, is_video=True)
+            else:
+                text = pipe.write_from_images(frames, is_video=False)
         except Exception as exc:  # noqa: BLE001
             text_error = str(exc)
 
-    return jsonify({"ok": True, "image_url": url, "text": text, "text_error": text_error})
+    return jsonify({
+        "ok": True, "image_urls": image_urls, "video_url": video_url,
+        "text": text, "text_error": text_error,
+    })
 
 
 @app.get("/api/accounts")
@@ -373,7 +408,10 @@ def api_post():
     """선택한 계정(들)에 글을 게시합니다. image_url이 있으면 이미지와 함께 게시."""
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
-    image_url = (data.get("image_url") or "").strip() or None
+    # 미디어: 단일 image_url(구버전) 또는 image_urls(여러 장), video_url
+    image_urls = data.get("image_urls") or ([data["image_url"]] if data.get("image_url") else [])
+    image_urls = [u for u in image_urls if u]
+    video_url = (data.get("video_url") or "").strip() or None
     if not text:
         return jsonify({"ok": False, "error": "게시할 글이 비어 있습니다."}), 400
     if len(text) > 500:
@@ -400,7 +438,7 @@ def api_post():
     for a in targets:
         try:
             client = ThreadsClient(a["user_id"], a["access_token"])
-            post_id = client.post_image(text, image_url) if image_url else client.post_text(text)
+            post_id = client.post_media(text, image_urls=image_urls, video_url=video_url)
             results.append({"label": a["label"], "ok": True, "post_id": post_id})
             with LOG_PATH.open("a", encoding="utf-8") as f:
                 f.write(json.dumps({
@@ -409,7 +447,8 @@ def api_post():
                     "topic": data.get("topic"),
                     "text": text,
                     "post_id": post_id,
-                    "image_url": image_url,
+                    "image_urls": image_urls,
+                    "video_url": video_url,
                 }, ensure_ascii=False) + "\n")
         except ThreadsError as exc:
             results.append({"label": a["label"], "ok": False, "error": str(exc)})

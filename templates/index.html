@@ -2,79 +2,117 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 <title>스레드 자동 업로드</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
 <style>
-  * { box-sizing: border-box; }
+  :root {
+    --bg: #0f1115;
+    --card: #181b22;
+    --card2: #1f232c;
+    --line: #2a2f3a;
+    --text: #f2f4f8;
+    --muted: #9aa3b2;
+    --accent1: #7c5cff;
+    --accent2: #4da3ff;
+    --accent: linear-gradient(135deg, #7c5cff 0%, #4da3ff 100%);
+    --ok: #2ec27e;
+    --err: #ff5d6c;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
-    margin: 0; background: #f4f4f6; color: #1a1a1a;
+    font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+    margin: 0; background: var(--bg); color: var(--text);
+    background-image: radial-gradient(1200px 500px at 80% -10%, rgba(124,92,255,.18), transparent),
+                      radial-gradient(900px 400px at -10% 0%, rgba(77,163,255,.14), transparent);
   }
   header {
-    background: #000; color: #fff; padding: 18px 24px;
-    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 20; backdrop-filter: blur(12px);
+    background: rgba(15,17,21,.72); border-bottom: 1px solid var(--line);
+    padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  #status { font-size: 13px; opacity: .85; }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 60px; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
-  .tab {
-    flex: 1; min-width: 90px; padding: 10px; border: none; border-radius: 10px;
-    background: #e6e6ea; cursor: pointer; font-size: 14px; font-weight: 600;
-  }
-  .tab.active { background: #000; color: #fff; }
-  .card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  header h1 { font-size: 17px; margin: 0; font-weight: 800; letter-spacing: -.3px; }
+  header h1 .dot { background: var(--accent); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #status { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.4; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 16px 14px 80px; }
+
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; background: var(--card); padding: 6px; border-radius: 16px; border: 1px solid var(--line); }
+  .tab { flex: 1; padding: 11px 6px; border: none; border-radius: 11px; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 700; transition: .15s; }
+  .tab.active { background: var(--accent); color: #fff; box-shadow: 0 6px 18px rgba(124,92,255,.35); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
   .panel { display: none; }
-  .panel.active { display: block; }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
-  input[type=text], textarea {
-    width: 100%; padding: 12px; border: 1px solid #d4d4d8; border-radius: 10px;
-    font-size: 15px; font-family: inherit; resize: vertical;
+  .panel.active { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px);} to { opacity:1; transform:none; } }
+
+  label { display: block; font-size: 13px; font-weight: 700; margin: 16px 0 8px; color: #cfd6e4; }
+  label:first-child { margin-top: 0; }
+  input[type=text], textarea, select {
+    width: 100%; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px;
+    font-size: 15px; font-family: inherit; background: var(--card2); color: var(--text); outline: none; transition: .15s;
   }
-  textarea { min-height: 160px; line-height: 1.6; }
+  input::placeholder, textarea::placeholder { color: #6b7382; }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent1); box-shadow: 0 0 0 3px rgba(124,92,255,.18); }
+  textarea { min-height: 150px; line-height: 1.65; resize: vertical; }
+
   button.primary {
-    background: #000; color: #fff; border: none; border-radius: 10px;
-    padding: 13px 18px; font-size: 15px; font-weight: 700; cursor: pointer; width: 100%;
+    background: var(--accent); color: #fff; border: none; border-radius: 14px;
+    padding: 15px 18px; font-size: 15px; font-weight: 800; cursor: pointer; width: 100%;
+    box-shadow: 0 8px 22px rgba(124,92,255,.35); transition: transform .08s, filter .15s;
   }
-  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary:active { transform: scale(.985); }
+  button.primary:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
   button.ghost {
-    background: #e6e6ea; color: #1a1a1a; border: none; border-radius: 10px;
-    padding: 13px 18px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%;
+    background: var(--card2); color: var(--text); border: 1px solid var(--line); border-radius: 13px;
+    padding: 13px 16px; font-size: 14px; font-weight: 700; cursor: pointer; width: 100%; transition: .12s;
   }
-  .row { display: flex; gap: 10px; margin-top: 12px; }
+  button.ghost:active { transform: scale(.985); }
+  .row { display: flex; gap: 10px; margin-top: 10px; }
   .row > * { flex: 1; }
-  .hint { font-size: 12px; color: #888; margin-top: 6px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.55; }
+  .count { font-size: 12px; color: var(--muted); text-align: right; margin-top: 6px; }
+  .divider { height: 1px; background: var(--line); margin: 18px 0 6px; border: 0; }
+
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip-cat {
-    padding: 9px 14px; border-radius: 20px; border: 1px solid #d4d4d8;
-    background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #333;
-  }
-  .chip-cat.sel { background: #e8590c; border-color: #e8590c; color: #fff; }
-  .count { font-size: 12px; color: #888; text-align: right; margin-top: 4px; }
-  .toast {
-    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
-    background: #1a1a1a; color: #fff; padding: 12px 20px; border-radius: 10px;
-    font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 50;
-    max-width: 90%;
-  }
-  .toast.show { opacity: 1; }
-  .toast.error { background: #c0392b; }
-  .toast.ok { background: #1e7e34; }
-  .hist-item { border-bottom: 1px solid #eee; padding: 12px 0; }
-  .hist-item:last-child { border-bottom: none; }
-  .hist-time { font-size: 12px; color: #999; }
-  .hist-text { font-size: 14px; line-height: 1.55; margin-top: 4px; white-space: pre-wrap; }
-  .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-  .badge.on { background: #d4f4dd; color: #1e7e34; }
-  .badge.off { background: #eee; color: #888; }
-  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff;
-    border-top-color: transparent; border-radius: 50%; animation: r .7s linear infinite; vertical-align: -2px; }
-  @keyframes r { to { transform: rotate(360deg); } }
+  .chip-cat { padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card2); color: #cfd6e4; cursor: pointer; font-size: 13px; font-weight: 700; transition: .12s; }
+  .chip-cat.sel { background: var(--accent); border-color: transparent; color: #fff; box-shadow: 0 4px 14px rgba(124,92,255,.4); }
+
+  /* 현재 계정 배너 */
+  .acct-banner { display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background: linear-gradient(135deg, rgba(124,92,255,.16), rgba(77,163,255,.12));
+    border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 16px; }
+  .acct-banner img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+
+  /* 미디어 미리보기 */
+  #mediaWrap { margin-top: 14px; }
+  .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .media-grid img, .media-grid video { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
+  #videoPrev { width: 100%; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 8px; max-height: 320px; }
+
+  .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
+    background: #11141a; border: 1px solid var(--line); color: #fff; padding: 13px 18px; border-radius: 14px;
+    font-size: 14px; font-weight: 600; opacity: 0; transition: .28s; pointer-events: none; z-index: 60; max-width: 92%; box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.ok { border-color: var(--ok); }
+  .toast.error { border-color: var(--err); }
+
+  .item { border: 1px solid var(--line); border-radius: 14px; padding: 13px; margin-bottom: 10px; background: var(--card2); }
+  .item-time { font-size: 11px; color: var(--muted); }
+  .item-text { font-size: 14px; line-height: 1.55; margin-top: 5px; white-space: pre-wrap; }
+  .badge { display:inline-block; padding:6px 11px; border-radius:999px; font-size:12px; font-weight:700; }
+  .badge.on { background: rgba(46,194,126,.16); color: var(--ok); }
+  .badge.off { background: var(--card2); color: var(--muted); }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:r .7s linear infinite; vertical-align:-2px; margin-right:6px; }
+  @keyframes r { to { transform: rotate(360deg);} }
+  .acct-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .acct-row img, .acct-row .ph { width:40px; height:40px; border-radius:50%; object-fit:cover; }
+  .acct-row .ph { background: var(--card); display:flex; align-items:center; justify-content:center; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🧵 스레드 자동 업로드</h1>
+  <h1>🧵 스레드 <span class="dot">오토</span></h1>
   <span id="status">상태 확인 중…</span>
 </header>
 
@@ -90,50 +128,53 @@
   <!-- 글쓰기 -->
   <div class="panel active" id="panel-write">
     <div class="card">
-      <div id="currentAcct" style="display:flex;align-items:center;justify-content:space-between;background:#f4f4f6;border-radius:10px;padding:10px 12px;margin-bottom:14px">
-        <span class="hint">계정 정보를 불러오는 중…</span>
-      </div>
+      <div class="acct-banner" id="currentAcct"><span class="hint">계정 불러오는 중…</span></div>
 
-      <label>① 카테고리 선택 (클릭)</label>
+      <label>① 카테고리</label>
       <div id="catChips" class="chips"></div>
 
-      <label style="margin-top:16px">② 주제 (자동 또는 직접 입력)</label>
-      <input type="text" id="topicInput" placeholder="아래 '자동 주제 설정'을 누르거나 직접 입력" />
+      <label>② 주제 (자동 또는 직접)</label>
+      <input type="text" id="topicInput" placeholder="'자동 주제 설정'을 누르거나 직접 입력" />
       <button class="ghost" id="randTopicBtn" style="margin-top:8px">🎯 자동 주제 설정 (랜덤)</button>
 
-      <label style="margin-top:16px">③ 만들기</label>
+      <label>③ 만들기</label>
       <button class="primary" id="autoBtn">🎲 글 + 사진 한 번에 자동 생성</button>
       <button class="ghost" id="genBtn" style="margin-top:8px">✨ 글만 생성</button>
-      <p class="hint">🧠 '글 + 사진 한 번에'를 누르면 글과 사진이 <b>함께 미리보기</b>로 떠요. 확인 후 게시하면 됩니다. (리서치·팩트체크 포함, 40~80초)</p>
+      <p class="hint">🧠 리서치 · 팩트체크 · MZ 반말 문체로 작성해요. (40~80초)</p>
 
-      <div style="border-top:1px solid #eee;margin:16px 0 4px"></div>
-      <label>📷 내 사진 사용</label>
-      <button class="ghost" id="uploadBtn">📁 내 사진 올리기</button>
-      <button class="ghost" id="uploadWriteBtn" style="margin-top:8px">🖼️ 내 사진 보고 AI가 글쓰기</button>
-      <input type="file" id="fileInput" accept="image/*" style="display:none" />
-      <p class="hint">컴퓨터의 사진을 올려 글에 붙이거나, 그 사진을 보고 AI가 어울리는 글을 쓰게 할 수 있어요.</p>
+      <hr class="divider" />
+      <label>📷 내 사진 · 영상 사용</label>
+      <div class="row">
+        <button class="ghost" id="uploadBtn">📁 사진/영상 올리기</button>
+        <button class="ghost" id="uploadWriteBtn">🖼️ 보고 AI 글쓰기</button>
+      </div>
+      <input type="file" id="fileInput" accept="image/*,video/*" multiple style="display:none" />
+      <p class="hint">사진 여러 장 또는 동영상 1개를 올릴 수 있어요. 'AI 글쓰기'는 올린 사진·영상을 보고 어울리는 글을 써줍니다.</p>
 
-      <label style="margin-top:20px">생성된 글 (수정 가능)</label>
-      <textarea id="postText" placeholder="여기에 AI가 만든 글이 나옵니다. 직접 써도 됩니다."></textarea>
+      <label>생성된 글 (수정 가능)</label>
+      <textarea id="postText" placeholder="여기에 글이 나와요. 직접 써도 됩니다."></textarea>
       <div class="count"><span id="charCount">0</span> / 500자</div>
 
-      <div id="imageBox" style="margin-top:14px; display:none">
-        <button class="ghost" id="genImgBtn">🎨 글에 어울리는 사진 AI로 만들기</button>
-        <div id="imgPreview" style="margin-top:10px; display:none">
-          <img id="imgEl" style="width:100%; border-radius:10px;" alt="생성된 이미지" />
-          <div class="row">
-            <button class="ghost" id="removeImgBtn">🗑 사진 빼기</button>
-            <button class="ghost" id="regenImgBtn">🔄 다시 만들기</button>
-          </div>
-        </div>
-        <p class="hint" id="imgHint">사진은 선택이에요. 글만 올려도 됩니다. (사진 생성은 OpenAI·Imgur 키가 필요해요)</p>
+      <div id="mediaWrap" style="display:none">
+        <video id="videoPrev" controls style="display:none"></video>
+        <div class="media-grid" id="imgGrid"></div>
+        <button class="ghost" id="clearMediaBtn" style="margin-top:8px">🗑 미디어 빼기</button>
       </div>
 
-      <label style="margin-top:16px">게시할 계정 (체크한 계정 모두에 올라가요)</label>
+      <label>게시할 계정 (체크한 계정 모두에)</label>
       <div id="postAccounts" class="chips"></div>
 
-      <button class="primary" id="postBtn" style="margin-top:12px">🚀 스레드에 게시</button>
-      <p class="hint">먼저 글을 만든 뒤 확인하고 게시하세요. 여러 계정을 체크하면 동시에 올라갑니다.</p>
+      <button class="primary" id="postBtn" style="margin-top:14px">🚀 스레드에 게시</button>
+    </div>
+  </div>
+
+  <!-- 주제 -->
+  <div class="panel" id="panel-topics">
+    <div class="card">
+      <label>주제 목록 ([카테고리] 아래 한 줄에 하나씩)</label>
+      <textarea id="topicsArea" style="min-height:320px" placeholder="[일상]&#10;오늘의 작은 습관"></textarea>
+      <p class="hint"># 으로 시작하는 줄은 메모입니다.</p>
+      <button class="primary" id="saveTopicsBtn" style="margin-top:8px">💾 저장</button>
     </div>
   </div>
 
@@ -143,34 +184,23 @@
       <label>등록된 계정</label>
       <div id="accountList"><p class="hint">불러오는 중…</p></div>
       <button class="ghost" id="refreshAccBtn" style="margin-top:8px">🔄 계정 정보(아이디·사진) 새로고침</button>
-
-      <div style="border-top:1px solid #eee;margin:16px 0 4px"></div>
+      <hr class="divider" />
       <label>새 계정 추가</label>
-      <input type="text" id="accLabel" placeholder="계정 이름(메모, 예: 메인 / 부계정)" style="margin-bottom:8px" />
+      <input type="text" id="accLabel" placeholder="계정 이름(메모, 예: 메인)" style="margin-bottom:8px" />
       <input type="text" id="accUserId" placeholder="THREADS_USER_ID (사용자 ID 숫자)" style="margin-bottom:8px" />
       <input type="text" id="accToken" placeholder="THREADS_ACCESS_TOKEN (긴 토큰)" style="margin-bottom:8px" />
       <button class="primary" id="addAccBtn">➕ 계정 추가</button>
-      <p class="hint">계정마다 토큰이 필요해요. Meta 개발자센터 → User Token Generator에서 그 계정을 테스터로 추가하고 토큰을 발급받아 여기에 붙여넣으면 됩니다. (토큰은 이 컴퓨터에만 저장돼요)</p>
+      <p class="hint">계정마다 토큰이 필요해요. (토큰은 이 컴퓨터에만 저장됩니다)</p>
     </div>
   </div>
 
-  <!-- 주제 -->
-  <div class="panel" id="panel-topics">
-    <div class="card">
-      <label>주제 목록 (한 줄에 하나씩)</label>
-      <textarea id="topicsArea" placeholder="오늘 하루를 버티게 해주는 작은 습관&#10;요즘 빠진 취미 이야기"></textarea>
-      <p class="hint"># 으로 시작하는 줄은 메모(무시)입니다. 무작위 생성 시 여기서 한 줄을 골라 글을 만듭니다.</p>
-      <button class="primary" id="saveTopicsBtn" style="margin-top:8px">💾 저장</button>
-    </div>
-  </div>
-
-  <!-- 자동 스케줄 -->
+  <!-- 자동 -->
   <div class="panel" id="panel-schedule">
     <div class="card">
-      <p>현재 상태: <span id="schedBadge" class="badge off">꺼짐</span></p>
+      <p>상태: <span id="schedBadge" class="badge off">꺼짐</span></p>
       <p class="hint" id="schedNext"></p>
       <label>자동 게시 시각</label>
-      <select id="cronSelect" style="width:100%;padding:12px;border-radius:10px;border:1px solid #d4d4d8;font-size:15px">
+      <select id="cronSelect">
         <option value="0 9 * * *">매일 오전 9시</option>
         <option value="0 12 * * *">매일 정오 12시</option>
         <option value="0 18 * * *">매일 오후 6시</option>
@@ -178,10 +208,10 @@
         <option value="0 9,21 * * *">매일 오전 9시 + 밤 9시</option>
       </select>
       <div class="row">
-        <button class="primary" id="schedStartBtn">▶️ 자동 켜기</button>
+        <button class="primary" id="schedStartBtn">▶️ 켜기</button>
         <button class="ghost" id="schedStopBtn">⏹ 끄기</button>
       </div>
-      <p class="hint">⚠️ 이 웹(터미널 창)이 켜져 있는 동안만 자동 게시가 작동합니다. 컴퓨터를 끄거나 창을 닫으면 멈춥니다.</p>
+      <p class="hint">⚠️ 이 앱(창)이 켜져 있는 동안만 자동 게시가 작동해요.</p>
     </div>
   </div>
 
@@ -189,7 +219,7 @@
   <div class="panel" id="panel-history">
     <div class="card">
       <button class="ghost" id="refreshHistBtn">🔄 새로고침</button>
-      <div id="histList" style="margin-top:12px"><p class="hint">아직 게시 기록이 없습니다.</p></div>
+      <div id="histList" style="margin-top:12px"><p class="hint">아직 게시 기록이 없어요.</p></div>
     </div>
   </div>
 </div>
@@ -199,17 +229,33 @@
 <script>
 const $ = (id) => document.getElementById(id);
 function toast(msg, type) {
-  const t = $("toast");
-  t.textContent = msg;
-  t.className = "toast show " + (type || "");
-  setTimeout(() => (t.className = "toast " + (type || "")), 3500);
+  const t = $("toast"); t.textContent = msg; t.className = "toast show " + (type || "");
+  setTimeout(() => (t.className = "toast " + (type || "")), 3600);
 }
 async function api(path, opts) {
   const r = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
   return r.json();
 }
 
-// 탭 전환
+// 미디어 상태
+let CUR_IMAGES = [];   // 공개 URL 배열
+let CUR_VIDEO = null;  // 공개 URL
+function renderMedia() {
+  const wrap = $("mediaWrap"), grid = $("imgGrid"), vid = $("videoPrev");
+  if (CUR_VIDEO) {
+    vid.src = CUR_VIDEO; vid.style.display = "block"; grid.innerHTML = "";
+    wrap.style.display = "block";
+  } else if (CUR_IMAGES.length) {
+    vid.style.display = "none";
+    grid.innerHTML = CUR_IMAGES.map((u) => `<img src="${u}">`).join("");
+    wrap.style.display = "block";
+  } else {
+    wrap.style.display = "none"; vid.style.display = "none"; grid.innerHTML = "";
+  }
+}
+$("clearMediaBtn").onclick = () => { CUR_IMAGES = []; CUR_VIDEO = null; renderMedia(); };
+
+// 탭
 document.querySelectorAll(".tab").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
@@ -222,23 +268,16 @@ document.querySelectorAll(".tab").forEach((b) => {
   };
 });
 
-let HAS_IMAGE = false;
-// 상태 표시
+// 상태
 async function loadStatus() {
   try {
     const s = await api("/api/status");
-    let parts = [];
-    parts.push(s.has_threads ? "스레드 ✅" : "스레드 ❌");
-    parts.push(s.has_anthropic ? "AI ✅" : "AI ❌");
-    parts.push(`오늘 ${s.posted_24h}/${s.daily_limit}`);
-    if (s.active_account) parts.push("👤 " + s.active_account);
-    $("status").textContent = parts.join(" · ");
-    // 이미지 기능: 키가 있으면 버튼 노출
-    HAS_IMAGE = s.has_image;
-    $("imageBox").style.display = "block";
-    $("genImgBtn").style.display = HAS_IMAGE ? "block" : "none";
-    if (!HAS_IMAGE) $("imgHint").textContent = "사진 기능을 쓰려면 .env에 OPENAI_API_KEY와 IMGUR_CLIENT_ID를 넣으세요. (글만 올리려면 무시해도 됩니다)";
-    // 스케줄 표시
+    let p = [];
+    p.push(s.has_threads || (s.active_account) ? "스레드 ✅" : "스레드 ❌");
+    p.push(s.has_anthropic ? "AI ✅" : "AI ❌");
+    p.push(`오늘 ${s.posted_24h}/${s.daily_limit}`);
+    if (s.active_account) p.push("👤 " + s.active_account);
+    $("status").textContent = p.join(" · ");
     $("schedBadge").textContent = s.schedule_running ? "켜짐" : "꺼짐";
     $("schedBadge").className = "badge " + (s.schedule_running ? "on" : "off");
     $("schedNext").textContent = s.schedule_running && s.schedule_next ? ("다음 실행: " + s.schedule_next) : "";
@@ -246,325 +285,180 @@ async function loadStatus() {
   } catch (e) { $("status").textContent = "연결 오류"; }
 }
 
-// 글자 수
-$("postText").addEventListener("input", () => {
-  $("charCount").textContent = $("postText").value.length;
-});
+$("postText").addEventListener("input", () => { $("charCount").textContent = $("postText").value.length; });
 
-// 선택된 카테고리 (없으면 전체 랜덤)
+// 카테고리
 let SEL_CAT = "";
-
-// 카테고리 칩 렌더링
 async function loadCategories() {
-  try {
-    const r = await api("/api/categories");
-    if (!r.ok) return;
-    const box = $("catChips");
-    const cats = ["전체(랜덤)"].concat(r.categories);
-    box.innerHTML = cats.map((c) => {
-      const val = (c === "전체(랜덤)") ? "" : c;
-      const sel = (val === SEL_CAT) ? " sel" : "";
-      return `<span class="chip-cat${sel}" data-cat="${val}">${c}</span>`;
-    }).join("");
-    box.querySelectorAll(".chip-cat").forEach((el) => {
-      el.onclick = () => {
-        SEL_CAT = el.dataset.cat;
-        box.querySelectorAll(".chip-cat").forEach((x) => x.classList.remove("sel"));
-        el.classList.add("sel");
-      };
-    });
-  } catch (e) {}
+  const r = await api("/api/categories");
+  if (!r.ok) return;
+  const box = $("catChips");
+  const cats = ["전체(랜덤)"].concat(r.categories);
+  box.innerHTML = cats.map((c) => {
+    const val = c === "전체(랜덤)" ? "" : c;
+    return `<span class="chip-cat${val === SEL_CAT ? " sel" : ""}" data-cat="${val}">${c}</span>`;
+  }).join("");
+  box.querySelectorAll(".chip-cat").forEach((el) => {
+    el.onclick = () => {
+      SEL_CAT = el.dataset.cat;
+      box.querySelectorAll(".chip-cat").forEach((x) => x.classList.remove("sel"));
+      el.classList.add("sel");
+    };
+  });
 }
 
-// 👤 계정 관리
-let ACCOUNTS = [];
-let SEL_ACCOUNTS = null; // null = 전체 선택
-
+// 계정
+let ACCOUNTS = [], SEL_ACCOUNTS = null;
 async function loadAccounts() {
   const r = await api("/api/accounts");
   ACCOUNTS = (r.ok && r.accounts) ? r.accounts : [];
-  const activeAcc = ACCOUNTS.find((a) => a.active) || ACCOUNTS[0];
-  // 처음엔 현재(활성) 계정만 선택된 상태로 시작
-  if (SEL_ACCOUNTS === null) SEL_ACCOUNTS = new Set(activeAcc ? [activeAcc.id] : []);
+  const act = ACCOUNTS.find((a) => a.active) || ACCOUNTS[0];
+  if (SEL_ACCOUNTS === null) SEL_ACCOUNTS = new Set(act ? [act.id] : []);
 
-  // 글쓰기 상단 '현재 연결된 계정' 배너
   const cur = $("currentAcct");
-  if (cur) {
-    if (activeAcc) {
-      const pic = activeAcc.profile_pic ? `<img src="${activeAcc.profile_pic}" style="width:30px;height:30px;border-radius:50%;margin-right:8px">` : "👤 ";
-      const name = activeAcc.username ? ("@" + activeAcc.username) : activeAcc.label;
-      cur.innerHTML = `<span style="display:flex;align-items:center">${pic}<b>${name}</b><span class="hint" style="margin-left:6px">(으)로 게시 중</span></span>
-        <button class="ghost" id="switchAcctBtn" style="width:auto;padding:8px 14px;margin:0">계정 변경</button>`;
-      $("switchAcctBtn").onclick = () => {
-        document.querySelector('.tab[data-tab="accounts"]').click();
-      };
-    } else {
-      cur.innerHTML = '<span class="hint">연결된 계정이 없어요. 👤 계정 탭에서 추가하세요.</span>';
-    }
+  if (act) {
+    const pic = act.profile_pic ? `<img src="${act.profile_pic}">` : "👤";
+    const name = act.username ? ("@" + act.username) : act.label;
+    cur.innerHTML = `<span style="display:flex;align-items:center;gap:8px">${pic}<b>${name}</b><span class="hint" style="margin:0">(으)로 게시</span></span>
+      <button class="ghost" id="switchAcctBtn" style="width:auto;padding:9px 14px">계정 변경</button>`;
+    $("switchAcctBtn").onclick = () => document.querySelector('.tab[data-tab="accounts"]').click();
+  } else {
+    cur.innerHTML = '<span class="hint">연결된 계정이 없어요. 👤 계정 탭에서 추가하세요.</span>';
   }
 
-  // 글쓰기 탭의 게시 계정 선택 칩 (프로필 사진 + 아이디 표시)
   const box = $("postAccounts");
-  const chipLabel = (a) => {
-    const name = a.username ? ("@" + a.username) : a.label;
-    const pic = a.profile_pic ? `<img src="${a.profile_pic}" style="width:18px;height:18px;border-radius:50%;vertical-align:-4px;margin-right:5px">` : "";
-    return pic + name;
-  };
-  if (box) {
-    if (!ACCOUNTS.length) {
-      box.innerHTML = '<p class="hint">등록된 계정이 없어요. 👤 계정 탭에서 추가하세요.</p>';
-    } else {
-      box.innerHTML = ACCOUNTS.map((a) => {
-        const sel = SEL_ACCOUNTS.has(a.id) ? " sel" : "";
-        return `<span class="chip-cat${sel}" data-acc="${a.id}">${chipLabel(a)}</span>`;
-      }).join("");
-      box.querySelectorAll(".chip-cat").forEach((el) => {
-        el.onclick = () => {
-          const id = el.dataset.acc;
-          if (SEL_ACCOUNTS.has(id)) SEL_ACCOUNTS.delete(id); else SEL_ACCOUNTS.add(id);
-          el.classList.toggle("sel");
-        };
-      });
-    }
-  }
+  const chipLabel = (a) => (a.profile_pic ? `<img src="${a.profile_pic}" style="width:18px;height:18px;border-radius:50%;vertical-align:-4px;margin-right:5px">` : "") + (a.username ? "@" + a.username : a.label);
+  box.innerHTML = ACCOUNTS.length
+    ? ACCOUNTS.map((a) => `<span class="chip-cat${SEL_ACCOUNTS.has(a.id) ? " sel" : ""}" data-acc="${a.id}">${chipLabel(a)}</span>`).join("")
+    : '<p class="hint">계정이 없어요. 👤 계정 탭에서 추가하세요.</p>';
+  box.querySelectorAll(".chip-cat").forEach((el) => {
+    el.onclick = () => {
+      const id = el.dataset.acc;
+      if (SEL_ACCOUNTS.has(id)) SEL_ACCOUNTS.delete(id); else SEL_ACCOUNTS.add(id);
+      el.classList.toggle("sel");
+    };
+  });
 
-  // 계정 탭의 목록 + 삭제 (프로필 사진 + @아이디)
   const list = $("accountList");
-  if (list) {
-    if (!ACCOUNTS.length) list.innerHTML = '<p class="hint">아직 계정이 없어요. 아래에서 추가하세요.</p>';
-    else list.innerHTML = ACCOUNTS.map((a) => {
-      const pic = a.profile_pic ? `<img src="${a.profile_pic}" style="width:38px;height:38px;border-radius:50%;margin-right:10px">` : '<span style="display:inline-block;width:38px;height:38px;border-radius:50%;background:#eee;margin-right:10px;text-align:center;line-height:38px">👤</span>';
-      const name = a.username ? ("@" + a.username) : "(아이디 미확인)";
-      const switchBtn = a.active
-        ? '<span class="badge on" style="padding:7px 12px">● 현재 사용 중</span>'
-        : `<button class="ghost" style="width:auto;padding:8px 12px" data-active="${a.id}">이 계정으로 전환</button>`;
-      return `<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span style="display:flex;align-items:center;min-width:0">${pic}<span style="min-width:0"><b>${name}</b><br><span class="hint">${a.label}</span></span></span>
-        <span style="display:flex;gap:6px;flex-shrink:0">${switchBtn}<button class="ghost" style="width:auto;padding:8px 12px" data-del="${a.id}">삭제</button></span>
-      </div>`;
-    }).join("");
-    list.querySelectorAll("[data-active]").forEach((el) => {
-      el.onclick = async () => {
-        const r2 = await api("/api/accounts/active", { method: "POST", body: JSON.stringify({ id: el.dataset.active }) });
-        if (r2.ok) {
-          // 전환하면 게시 선택도 그 계정으로 맞춤
-          SEL_ACCOUNTS = new Set([el.dataset.active]);
-          toast("현재 계정을 변경했어요.", "ok");
-          loadAccounts(); loadStatus();
-        } else toast("변경 실패", "error");
-      };
-    });
-    list.querySelectorAll("[data-del]").forEach((el) => {
-      el.onclick = async () => {
-        if (!confirm("이 계정을 삭제할까요?")) return;
-        await api("/api/accounts/delete", { method: "POST", body: JSON.stringify({ id: el.dataset.del }) });
-        SEL_ACCOUNTS.delete(el.dataset.del);
-        toast("삭제했어요.", "ok"); loadAccounts();
-      };
-    });
-  }
+  list.innerHTML = ACCOUNTS.length ? ACCOUNTS.map((a) => {
+    const pic = a.profile_pic ? `<img src="${a.profile_pic}">` : '<span class="ph">👤</span>';
+    const name = a.username ? ("@" + a.username) : "(아이디 미확인)";
+    const sw = a.active ? '<span class="badge on">● 사용 중</span>' : `<button class="ghost" style="width:auto;padding:9px 12px" data-active="${a.id}">전환</button>`;
+    return `<div class="item acct-row"><span style="display:flex;align-items:center;gap:10px;min-width:0">${pic}<span style="min-width:0"><b>${name}</b><br><span class="hint" style="margin:0">${a.label}</span></span></span><span style="display:flex;gap:6px;flex-shrink:0">${sw}<button class="ghost" style="width:auto;padding:9px 12px" data-del="${a.id}">삭제</button></span></div>`;
+  }).join("") : '<p class="hint">아직 계정이 없어요.</p>';
+  list.querySelectorAll("[data-active]").forEach((el) => el.onclick = async () => {
+    const r2 = await api("/api/accounts/active", { method: "POST", body: JSON.stringify({ id: el.dataset.active }) });
+    if (r2.ok) { SEL_ACCOUNTS = new Set([el.dataset.active]); toast("현재 계정 변경됨", "ok"); loadAccounts(); loadStatus(); }
+  });
+  list.querySelectorAll("[data-del]").forEach((el) => el.onclick = async () => {
+    if (!confirm("이 계정을 삭제할까요?")) return;
+    await api("/api/accounts/delete", { method: "POST", body: JSON.stringify({ id: el.dataset.del }) });
+    SEL_ACCOUNTS && SEL_ACCOUNTS.delete(el.dataset.del); toast("삭제됨", "ok"); loadAccounts();
+  });
 }
-
-$("refreshAccBtn").onclick = async () => {
-  toast("계정 정보 가져오는 중…");
-  const r = await api("/api/accounts/refresh", { method: "POST" });
-  if (r.ok) { toast("계정 정보를 새로고침했어요.", "ok"); loadAccounts(); }
-  else toast("새로고침 실패", "error");
-};
-
+$("refreshAccBtn").onclick = async () => { toast("정보 가져오는 중…"); const r = await api("/api/accounts/refresh", { method: "POST" }); if (r.ok) { toast("새로고침 완료", "ok"); loadAccounts(); loadStatus(); } };
 $("addAccBtn").onclick = async () => {
-  const label = $("accLabel").value.trim();
-  const user_id = $("accUserId").value.trim();
-  const access_token = $("accToken").value.trim();
-  if (!user_id || !access_token) return toast("사용자 ID와 토큰을 입력하세요.", "error");
+  const label = $("accLabel").value.trim(), user_id = $("accUserId").value.trim(), access_token = $("accToken").value.trim();
+  if (!user_id || !access_token) return toast("ID와 토큰을 입력하세요.", "error");
   const r = await api("/api/accounts", { method: "POST", body: JSON.stringify({ label, user_id, access_token }) });
-  if (r.ok) {
-    if (SEL_ACCOUNTS) SEL_ACCOUNTS.add(r.id);
-    $("accLabel").value = ""; $("accUserId").value = ""; $("accToken").value = "";
-    toast("계정을 추가했어요.", "ok"); loadAccounts();
-  } else toast(r.error || "추가 실패", "error");
+  if (r.ok) { if (SEL_ACCOUNTS) SEL_ACCOUNTS.add(r.id); $("accLabel").value = $("accUserId").value = $("accToken").value = ""; toast("계정 추가됨", "ok"); loadAccounts(); }
+  else toast(r.error || "추가 실패", "error");
 };
 
-// 📷 내 사진 올리기 / 사진 보고 AI 글쓰기
-let UPLOAD_MODE = "attach"; // "attach" | "write"
+// 자동 주제
+$("randTopicBtn").onclick = async () => {
+  const r = await api("/api/random_topic", { method: "POST", body: JSON.stringify({ category: SEL_CAT }) });
+  if (r.ok) { $("topicInput").value = r.topic; toast("주제: " + r.topic, "ok"); } else toast(r.error || "실패", "error");
+};
+
+// 업로드 (사진 여러 장 / 영상)
+let UPLOAD_MODE = "attach";
 $("uploadBtn").onclick = () => { UPLOAD_MODE = "attach"; $("fileInput").value = ""; $("fileInput").click(); };
 $("uploadWriteBtn").onclick = () => { UPLOAD_MODE = "write"; $("fileInput").value = ""; $("fileInput").click(); };
 $("fileInput").onchange = async (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
+  const files = [...e.target.files]; if (!files.length) return;
   const writing = UPLOAD_MODE === "write";
-  toast(writing ? "사진 분석해서 글 쓰는 중… (20~40초)" : "사진 올리는 중…");
+  toast(writing ? "미디어 분석해서 글 쓰는 중… (20~60초)" : "업로드 중…");
   const fd = new FormData();
-  fd.append("file", f);
+  files.forEach((f) => fd.append("files", f));
   fd.append("write", writing ? "1" : "0");
   try {
-    const resp = await fetch("/api/upload_image", { method: "POST", body: fd });
+    const resp = await fetch("/api/upload_media", { method: "POST", body: fd });
     const j = await resp.json();
     if (j.ok) {
-      CUR_IMAGE = j.image_url;
-      $("imgEl").src = j.image_url;
-      $("imageBox").style.display = "block";
-      $("imgPreview").style.display = "block";
+      CUR_IMAGES = j.image_urls || []; CUR_VIDEO = j.video_url || null; renderMedia();
       if (j.text) { $("postText").value = j.text; $("charCount").textContent = j.text.length; }
-      if (j.text_error) toast("사진은 올렸지만 글 작성 실패: " + j.text_error, "error");
-      else toast(writing ? "사진 보고 글까지 썼어요!" : "사진을 올렸어요.", "ok");
-      $("imgPreview").scrollIntoView({ behavior: "smooth", block: "center" });
+      if (j.text_error) toast("미디어는 올렸지만 글 작성 실패: " + j.text_error, "error");
+      else toast(writing ? "미디어 보고 글까지 썼어요!" : "미디어를 올렸어요.", "ok");
+      $("mediaWrap").scrollIntoView({ behavior: "smooth", block: "center" });
     } else toast(j.error || "업로드 실패", "error");
   } catch (err) { toast("업로드 오류: " + err, "error"); }
 };
 
-// 🎯 자동 주제 설정 (랜덤으로 주제 하나 뽑아 입력칸에 채움)
-$("randTopicBtn").onclick = async () => {
-  try {
-    const r = await api("/api/random_topic", { method: "POST", body: JSON.stringify({ category: SEL_CAT }) });
-    if (r.ok) { $("topicInput").value = r.topic; toast("주제: " + r.topic, "ok"); }
-    else toast(r.error || "주제 설정 실패", "error");
-  } catch (e) { toast("오류: " + e, "error"); }
-};
-
-// 🎲 자동 생성 (글 + 사진 한 번에)
+// 자동 생성 (글 + AI 사진)
 $("autoBtn").onclick = async () => {
-  const btn = $("autoBtn");
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> 리서치·작성·사진 중… (40~80초)';
-  CUR_IMAGE = null; $("imgPreview").style.display = "none";
+  const b = $("autoBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>리서치·작성·사진 중… (40~80초)';
+  CUR_IMAGES = []; CUR_VIDEO = null; renderMedia();
   try {
     const r = await api("/api/auto", { method: "POST", body: JSON.stringify({ category: SEL_CAT, topic: $("topicInput").value, with_image: true }) });
     if (r.ok) {
-      $("postText").value = r.text;
-      $("charCount").textContent = r.text.length;
+      $("postText").value = r.text; $("charCount").textContent = r.text.length;
       if (r.topic) $("topicInput").value = r.topic;
-      if (r.image_url) {
-        CUR_IMAGE = r.image_url;
-        $("imgEl").src = r.image_url;
-        $("imgPreview").style.display = "block";
-        toast("글과 사진이 만들어졌어요. 확인 후 게시하세요.", "ok");
-      } else if (r.image_error) {
-        toast("글은 됐지만 사진 실패: " + r.image_error, "error");
-      } else {
-        toast("글이 생성됐어요. (사진 기능은 키가 없어 건너뜀)", "ok");
-      }
-      // 생성 결과(글 + 사진)가 바로 보이도록 그 위치로 스크롤
-      (r.image_url ? $("imgPreview") : $("postText")).scrollIntoView({ behavior: "smooth", block: "center" });
-    } else toast(r.error || "자동 생성 실패", "error");
-  } catch (e) { toast("자동 생성 오류: " + e, "error"); }
-  btn.disabled = false;
-  btn.textContent = "🎲 글 + 사진 한 번에 자동 생성";
+      if (r.image_url) { CUR_IMAGES = [r.image_url]; renderMedia(); toast("글과 사진 완성!", "ok"); }
+      else if (r.image_error) toast("글은 됐지만 사진 실패: " + r.image_error, "error");
+      else toast("글 생성 완료 (사진은 건너뜀)", "ok");
+      (CUR_IMAGES.length ? $("mediaWrap") : $("postText")).scrollIntoView({ behavior: "smooth", block: "center" });
+    } else toast(r.error || "실패", "error");
+  } catch (e) { toast("오류: " + e, "error"); }
+  b.disabled = false; b.textContent = "🎲 글 + 사진 한 번에 자동 생성";
 };
 
-// 생성
+// 글만 생성
 $("genBtn").onclick = async () => {
-  const btn = $("genBtn");
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> 리서치·작성 중… (30~60초)';
+  const b = $("genBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>리서치·작성 중… (30~60초)';
   try {
     const r = await api("/api/generate", { method: "POST", body: JSON.stringify({ topic: $("topicInput").value, category: SEL_CAT }) });
-    if (r.ok) {
-      $("postText").value = r.text;
-      $("charCount").textContent = r.text.length;
-      if (r.topic) $("topicInput").value = r.topic;
-      CUR_IMAGE = null; $("imgPreview").style.display = "none";  // 새 글이면 기존 사진 초기화
-      toast("글이 생성됐어요. 확인 후 게시하세요.", "ok");
-    } else toast(r.error || "생성 실패", "error");
-  } catch (e) { toast("생성 중 오류: " + e, "error"); }
-  btn.disabled = false;
-  btn.textContent = "✨ AI로 글 생성";
-};
-
-// 현재 첨부된 이미지 URL (없으면 null)
-let CUR_IMAGE = null;
-
-// 이미지 생성
-async function makeImage() {
-  const text = $("postText").value.trim();
-  if (!text) return toast("먼저 글을 만들거나 입력해주세요.", "error");
-  const btn = $("genImgBtn");
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> 사진 만드는 중… (20~40초)';
-  try {
-    const r = await api("/api/generate_image", { method: "POST", body: JSON.stringify({ text }) });
-    if (r.ok) {
-      CUR_IMAGE = r.image_url;
-      $("imgEl").src = r.image_url;
-      $("imgPreview").style.display = "block";
-      toast("사진이 만들어졌어요.", "ok");
-    } else toast(r.error || "사진 생성 실패", "error");
-  } catch (e) { toast("사진 생성 오류: " + e, "error"); }
-  btn.disabled = false;
-  btn.textContent = "🎨 글에 어울리는 사진 AI로 만들기";
-}
-$("genImgBtn").onclick = makeImage;
-$("regenImgBtn").onclick = makeImage;
-$("removeImgBtn").onclick = () => {
-  CUR_IMAGE = null;
-  $("imgPreview").style.display = "none";
-  toast("사진을 뺐어요. 글만 게시됩니다.");
+    if (r.ok) { $("postText").value = r.text; $("charCount").textContent = r.text.length; if (r.topic) $("topicInput").value = r.topic; toast("글 생성 완료", "ok"); }
+    else toast(r.error || "실패", "error");
+  } catch (e) { toast("오류: " + e, "error"); }
+  b.disabled = false; b.textContent = "✨ 글만 생성";
 };
 
 // 게시
 $("postBtn").onclick = async () => {
   const text = $("postText").value.trim();
-  if (!text) return toast("게시할 글이 비어 있어요.", "error");
+  if (!text) return toast("글이 비어 있어요.", "error");
   const ids = SEL_ACCOUNTS ? [...SEL_ACCOUNTS] : [];
-  if (ACCOUNTS.length && ids.length === 0) return toast("게시할 계정을 하나 이상 선택하세요.", "error");
-  const withImg = CUR_IMAGE ? " (사진 포함)" : "";
+  if (ACCOUNTS.length && ids.length === 0) return toast("게시할 계정을 선택하세요.", "error");
   const cnt = ids.length || 1;
-  if (!confirm(cnt + "개 계정에" + withImg + " 게시할까요?")) return;
-  const btn = $("postBtn");
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> 게시 중…';
+  const mediaDesc = CUR_VIDEO ? " (영상 포함)" : (CUR_IMAGES.length ? ` (사진 ${CUR_IMAGES.length}장)` : "");
+  if (!confirm(cnt + "개 계정에" + mediaDesc + " 게시할까요?")) return;
+  const b = $("postBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>게시 중…';
   try {
-    const r = await api("/api/post", { method: "POST", body: JSON.stringify({ text, image_url: CUR_IMAGE, topic: $("topicInput").value || null, account_ids: ids }) });
-    if (r.ok) {
-      toast("✅ " + (r.summary || "게시 완료!"), "ok");
-      $("postText").value = ""; $("charCount").textContent = 0;
-      CUR_IMAGE = null; $("imgPreview").style.display = "none";
-      loadStatus();
-    } else toast(r.error || "게시 실패", "error");
-  } catch (e) { toast("게시 중 오류: " + e, "error"); }
-  btn.disabled = false;
-  btn.textContent = "🚀 스레드에 게시";
+    const r = await api("/api/post", { method: "POST", body: JSON.stringify({ text, image_urls: CUR_IMAGES, video_url: CUR_VIDEO, topic: $("topicInput").value || null, account_ids: ids }) });
+    if (r.ok) { toast("✅ " + (r.summary || "게시 완료!"), "ok"); $("postText").value = ""; $("charCount").textContent = 0; CUR_IMAGES = []; CUR_VIDEO = null; renderMedia(); loadStatus(); }
+    else toast(r.error || "게시 실패", "error");
+  } catch (e) { toast("오류: " + e, "error"); }
+  b.disabled = false; b.textContent = "🚀 스레드에 게시";
 };
 
 // 주제
-async function loadTopics() {
-  const r = await api("/api/topics");
-  if (r.ok) $("topicsArea").value = r.content;
-}
-$("saveTopicsBtn").onclick = async () => {
-  const r = await api("/api/topics", { method: "POST", body: JSON.stringify({ content: $("topicsArea").value }) });
-  toast(r.ok ? "저장됐어요." : "저장 실패", r.ok ? "ok" : "error");
-  if (r.ok) loadCategories();  // 카테고리 갱신
-};
+async function loadTopics() { const r = await api("/api/topics"); if (r.ok) $("topicsArea").value = r.content; }
+$("saveTopicsBtn").onclick = async () => { const r = await api("/api/topics", { method: "POST", body: JSON.stringify({ content: $("topicsArea").value }) }); toast(r.ok ? "저장됨" : "실패", r.ok ? "ok" : "error"); if (r.ok) loadCategories(); };
 
 // 스케줄
-$("schedStartBtn").onclick = async () => {
-  const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "start", cron: $("cronSelect").value }) });
-  if (r.ok) { toast("자동 게시를 켰어요.", "ok"); loadStatus(); }
-  else toast(r.error || "실패", "error");
-};
-$("schedStopBtn").onclick = async () => {
-  const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "stop" }) });
-  if (r.ok) { toast("자동 게시를 껐어요.", "ok"); loadStatus(); }
-  else toast(r.error || "실패", "error");
-};
+$("schedStartBtn").onclick = async () => { const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "start", cron: $("cronSelect").value }) }); if (r.ok) { toast("자동 켜짐", "ok"); loadStatus(); } else toast(r.error || "실패", "error"); };
+$("schedStopBtn").onclick = async () => { const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "stop" }) }); if (r.ok) { toast("자동 꺼짐", "ok"); loadStatus(); } };
 
 // 기록
 async function loadHistory() {
-  const r = await api("/api/history");
-  const box = $("histList");
-  if (!r.ok || !r.items.length) { box.innerHTML = '<p class="hint">아직 게시 기록이 없습니다.</p>'; return; }
-  box.innerHTML = r.items.map((it) => `
-    <div class="hist-item">
-      <div class="hist-time">${it.time || ""} ${it.topic ? "· " + it.topic : ""}</div>
-      <div class="hist-text">${(it.text || "").replace(/</g, "&lt;")}</div>
-    </div>`).join("");
+  const r = await api("/api/history"); const box = $("histList");
+  if (!r.ok || !r.items.length) { box.innerHTML = '<p class="hint">아직 게시 기록이 없어요.</p>'; return; }
+  box.innerHTML = r.items.map((it) => `<div class="item"><div class="item-time">${it.time || ""} ${it.account ? "· " + it.account : ""}</div><div class="item-text">${(it.text || "").replace(/</g, "&lt;")}</div></div>`).join("");
 }
 $("refreshHistBtn").onclick = loadHistory;
 
-loadStatus();
-loadCategories();
-loadAccounts();
+loadStatus(); loadCategories(); loadAccounts();
 setInterval(loadStatus, 15000);
 </script>
 </body>

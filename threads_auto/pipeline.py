@@ -192,30 +192,48 @@ class ThreadsPipeline:
         return text
 
     def write_from_image(self, image_bytes: bytes, media_type: str = "image/png") -> str:
-        """업로드한 사진을 보고, 사진에 어울리는 스레드 글을 작성합니다(비전)."""
+        """업로드한 사진 한 장을 보고 글을 씁니다(하위호환)."""
+        return self.write_from_images([(image_bytes, media_type)])
+
+    def write_from_images(self, images: list[tuple[bytes, str]],
+                          is_video: bool = False) -> str:
+        """사진 여러 장(또는 영상 프레임들)을 보고 어울리는 스레드 글을 작성합니다."""
         import base64
 
-        b64 = base64.standard_b64encode(image_bytes).decode("ascii")
-        user = [
-            {
+        content = []
+        for img_bytes, media_type in images[:8]:  # 과도한 토큰 방지: 최대 8장
+            content.append({
                 "type": "image",
-                "source": {"type": "base64", "media_type": media_type, "data": b64},
-            },
-            {
-                "type": "text",
-                "text": (
-                    "이 사진을 보고, 사진 속 분위기·디테일에 딱 맞는 스레드 게시글을 써줘. "
-                    "사진에 보이는 구체적인 요소를 자연스럽게 녹이되, 설명문이 아니라 "
-                    "감정·장면이 담긴 글로. 반드시 200자 이내로 짧게."
-                ),
-            },
-        ]
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64.standard_b64encode(img_bytes).decode("ascii"),
+                },
+            })
+        if is_video:
+            instr = (
+                "위 이미지들은 한 동영상에서 뽑은 장면들이야. 영상의 흐름·분위기를 파악해서 "
+                "어울리는 스레드 글을 써줘. 장면 나열·설명문 말고, 감정·장면이 담긴 글로. "
+                "반드시 200자 이내로 짧게."
+            )
+        elif len(images) > 1:
+            instr = (
+                "위 사진들을 모두 보고, 사진들이 담은 분위기·이야기에 어울리는 스레드 글을 "
+                "한 편 써줘. 설명문이 아니라 감정·장면이 담긴 글로. 반드시 200자 이내로 짧게."
+            )
+        else:
+            instr = (
+                "이 사진을 보고, 사진 속 분위기·디테일에 딱 맞는 스레드 글을 써줘. "
+                "설명문이 아니라 감정·장면이 담긴 글로. 반드시 200자 이내로 짧게."
+            )
+        content.append({"type": "text", "text": instr})
+
         resp = self.client.messages.create(
             model=self.model,
             max_tokens=800,
             thinking={"type": "adaptive"},
             system=STYLE_GUIDE,
-            messages=[{"role": "user", "content": user}],
+            messages=[{"role": "user", "content": content}],
         )
         text = "".join(b.text for b in resp.content if b.type == "text").strip()
         return text[:260] if len(text) > 260 else text
