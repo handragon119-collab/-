@@ -59,6 +59,29 @@ DESIGN_GUIDE = (
 )
 
 
+# 카테고리별 전용 문체 (선택한 카테고리에 맞춰 글쓰기 에이전트에 덧붙임)
+PET_STYLE = """
+[반려동물 카테고리 전용 — 한국 스레드 '댕댕이/냥이' 커뮤니티 말투로 써라]
+- 반려동물 1인칭 시점이 기본(가끔 집사 시점). 강아지/고양이가 직접 말하듯 귀엽게.
+- 극강의 애교 반말체. 받침·맞춤법을 일부러 귀엽게 비튼다.
+  예) 안농(안녕), 나 ~야/~얌, 칭구(친구), ~해조(해줘), ~할뤠?(할래), ~간댜(간다),
+      ~줄랭?(줄래), ~가라개, 잘생겨져찌(졌지), 귀요워, 늠(너무), 깜놀
+- 스레드 댕댕이 은어를 자연스럽게: 스하리(스레드 하트), 반하리(반드시 하트 갚기/맞팔),
+  스친(스레드 친구), 뒷삭, 첫스레드, 프로필 링크, 인스타·유튜브 놀러와
+- 맞팔·댓글 유도 한 줄을 자연스럽게: "스하리=반하리💗", "나랑 칭구해조~", "댓글 남겨조"
+- 이모지를 풍성하게(2~5개): 🐶🐾🤍🩷💗🥺😵‍💫🙌🏻❤️😎✨🍚 등 분위기에 맞게.
+- 해시태그 1~3개 가능: #강아지 #말티즈 #첫스레드 #강아지자랑 등.
+- ㅋㅋㅋ, ~~~, !!! 같은 늘려쓰기 OK. 통통 튀고 짧게.
+- 상황 유형은 주제에 맞춰: 첫인사·자기소개 / 스하리 모집 / 미용·자랑 / 입양·보호소 홍보 /
+  노견 자랑 / 그리움·감성 / 일상 힐링.
+- ⚠️ 똑같은 문구를 복붙하지 마라. 위 말투·키워드·이모지의 '느낌'만 살려 매번 새롭게 써라.
+"""
+
+STYLE_BY_CATEGORY = {
+    "반려동물": PET_STYLE,
+}
+
+
 class PipelineError(RuntimeError):
     """파이프라인 단계 실패 시 발생."""
 
@@ -163,7 +186,7 @@ class ThreadsPipeline:
         return data
 
     # ── 3단계: 글쓰기 (반말 바이럴 문체) ──
-    def write(self, topic: str, research: dict, facts: dict) -> str:
+    def write(self, topic: str, research: dict, facts: dict, category: str | None = None) -> str:
         brief = [f"주제: {topic}"]
         if research.get("angle"):
             brief.append(f"차별화 각도: {research['angle']}")
@@ -185,8 +208,9 @@ class ThreadsPipeline:
         else:
             brief.append("이 글엔 검증된 사실 데이터가 없으니, 수치·단정적 주장은 쓰지 마라.")
 
+        system = STYLE_GUIDE + STYLE_BY_CATEGORY.get((category or "").strip(), "")
         user = "\n".join(brief) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게."
-        text = self._complete(STYLE_GUIDE, user, max_tokens=800)
+        text = self._complete(system, user, max_tokens=800)
         if len(text) > 260:
             text = text[:260].rstrip()
         return text
@@ -251,13 +275,13 @@ class ThreadsPipeline:
         return self._complete(system, user, max_tokens=400)
 
     # ── 전체 실행 ──
-    def run(self, topic: str) -> dict:
+    def run(self, topic: str, category: str | None = None) -> dict:
         """리서치→(팩트)→글쓰기. {text, meta} 반환."""
         research = self.research(topic)
         facts = {"verified_facts": [], "note": ""}
         if research.get("needs_facts"):
             facts = self.factcheck(topic, research.get("angle", ""))
-        text = self.write(topic, research, facts)
+        text = self.write(topic, research, facts, category=category)
         return {
             "text": text,
             "meta": {
