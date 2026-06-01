@@ -90,6 +90,10 @@
   <!-- 글쓰기 -->
   <div class="panel active" id="panel-write">
     <div class="card">
+      <div id="currentAcct" style="display:flex;align-items:center;justify-content:space-between;background:#f4f4f6;border-radius:10px;padding:10px 12px;margin-bottom:14px">
+        <span class="hint">계정 정보를 불러오는 중…</span>
+      </div>
+
       <label>① 카테고리 선택 (클릭)</label>
       <div id="catChips" class="chips"></div>
 
@@ -227,6 +231,7 @@ async function loadStatus() {
     parts.push(s.has_threads ? "스레드 ✅" : "스레드 ❌");
     parts.push(s.has_anthropic ? "AI ✅" : "AI ❌");
     parts.push(`오늘 ${s.posted_24h}/${s.daily_limit}`);
+    if (s.active_account) parts.push("👤 " + s.active_account);
     $("status").textContent = parts.join(" · ");
     // 이미지 기능: 키가 있으면 버튼 노출
     HAS_IMAGE = s.has_image;
@@ -278,7 +283,25 @@ let SEL_ACCOUNTS = null; // null = 전체 선택
 async function loadAccounts() {
   const r = await api("/api/accounts");
   ACCOUNTS = (r.ok && r.accounts) ? r.accounts : [];
-  if (SEL_ACCOUNTS === null) SEL_ACCOUNTS = new Set(ACCOUNTS.map((a) => a.id));
+  const activeAcc = ACCOUNTS.find((a) => a.active) || ACCOUNTS[0];
+  // 처음엔 현재(활성) 계정만 선택된 상태로 시작
+  if (SEL_ACCOUNTS === null) SEL_ACCOUNTS = new Set(activeAcc ? [activeAcc.id] : []);
+
+  // 글쓰기 상단 '현재 연결된 계정' 배너
+  const cur = $("currentAcct");
+  if (cur) {
+    if (activeAcc) {
+      const pic = activeAcc.profile_pic ? `<img src="${activeAcc.profile_pic}" style="width:30px;height:30px;border-radius:50%;margin-right:8px">` : "👤 ";
+      const name = activeAcc.username ? ("@" + activeAcc.username) : activeAcc.label;
+      cur.innerHTML = `<span style="display:flex;align-items:center">${pic}<b>${name}</b><span class="hint" style="margin-left:6px">(으)로 게시 중</span></span>
+        <button class="ghost" id="switchAcctBtn" style="width:auto;padding:8px 14px;margin:0">계정 변경</button>`;
+      $("switchAcctBtn").onclick = () => {
+        document.querySelector('.tab[data-tab="accounts"]').click();
+      };
+    } else {
+      cur.innerHTML = '<span class="hint">연결된 계정이 없어요. 👤 계정 탭에서 추가하세요.</span>';
+    }
+  }
 
   // 글쓰기 탭의 게시 계정 선택 칩 (프로필 사진 + 아이디 표시)
   const box = $("postAccounts");
@@ -312,11 +335,25 @@ async function loadAccounts() {
     else list.innerHTML = ACCOUNTS.map((a) => {
       const pic = a.profile_pic ? `<img src="${a.profile_pic}" style="width:38px;height:38px;border-radius:50%;margin-right:10px">` : '<span style="display:inline-block;width:38px;height:38px;border-radius:50%;background:#eee;margin-right:10px;text-align:center;line-height:38px">👤</span>';
       const name = a.username ? ("@" + a.username) : "(아이디 미확인)";
-      return `<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center">
-        <span style="display:flex;align-items:center">${pic}<span><b>${name}</b><br><span class="hint">${a.label}</span></span></span>
-        <button class="ghost" style="width:auto;padding:8px 14px" data-del="${a.id}">삭제</button>
+      const switchBtn = a.active
+        ? '<span class="badge on" style="padding:7px 12px">● 현재 사용 중</span>'
+        : `<button class="ghost" style="width:auto;padding:8px 12px" data-active="${a.id}">이 계정으로 전환</button>`;
+      return `<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="display:flex;align-items:center;min-width:0">${pic}<span style="min-width:0"><b>${name}</b><br><span class="hint">${a.label}</span></span></span>
+        <span style="display:flex;gap:6px;flex-shrink:0">${switchBtn}<button class="ghost" style="width:auto;padding:8px 12px" data-del="${a.id}">삭제</button></span>
       </div>`;
     }).join("");
+    list.querySelectorAll("[data-active]").forEach((el) => {
+      el.onclick = async () => {
+        const r2 = await api("/api/accounts/active", { method: "POST", body: JSON.stringify({ id: el.dataset.active }) });
+        if (r2.ok) {
+          // 전환하면 게시 선택도 그 계정으로 맞춤
+          SEL_ACCOUNTS = new Set([el.dataset.active]);
+          toast("현재 계정을 변경했어요.", "ok");
+          loadAccounts(); loadStatus();
+        } else toast("변경 실패", "error");
+      };
+    });
     list.querySelectorAll("[data-del]").forEach((el) => {
       el.onclick = async () => {
         if (!confirm("이 계정을 삭제할까요?")) return;

@@ -100,8 +100,10 @@ def api_status():
     """키 설정 여부, 오늘 게시 수, 스케줄 상태를 반환합니다."""
     posted = safety.count_posts_last_24h()
     job = _scheduler.get_job("auto_post") if _scheduler else None
+    active = accounts.get_active()
     return jsonify(
         {
+            "active_account": (("@" + active["username"]) if active and active.get("username") else (active.get("label") if active else None)),
             "has_anthropic": bool(config.ANTHROPIC_API_KEY),
             "has_threads": bool(config.THREADS_USER_ID and config.THREADS_ACCESS_TOKEN),
             "has_image": config.has_image_support(),
@@ -355,6 +357,15 @@ def api_refresh_accounts():
     """각 계정의 스레드 프로필(아이디·사진)을 다시 가져옵니다."""
     accounts.refresh_profiles()
     return jsonify({"ok": True, "accounts": accounts.public_list()})
+
+
+@app.post("/api/accounts/active")
+def api_set_active():
+    """현재 연결(활성) 계정을 변경합니다."""
+    data = request.get_json(silent=True) or {}
+    acc = accounts.set_active((data.get("id") or "").strip())
+    return jsonify({"ok": True, "active": acc["username"] if acc else None,
+                    "accounts": accounts.public_list()})
 
 
 @app.post("/api/post")

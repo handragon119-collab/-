@@ -50,13 +50,38 @@ def list_accounts() -> list[dict]:
 
 def public_list() -> list[dict]:
     """화면 표시용(토큰은 숨김, 프로필 정보 포함)."""
+    active = get_active()
+    active_id = active["id"] if active else None
     return [
         {"id": a["id"], "label": a.get("label", "계정"),
          "user_id": a.get("user_id", ""),
          "username": a.get("username", ""),
-         "profile_pic": a.get("profile_pic", "")}
+         "profile_pic": a.get("profile_pic", ""),
+         "active": a["id"] == active_id}
         for a in list_accounts()
     ]
+
+
+def get_active() -> dict | None:
+    """현재 활성(연결된) 계정. 없으면 첫 계정."""
+    items = list_accounts()
+    for a in items:
+        if a.get("active"):
+            return a
+    return items[0] if items else None
+
+
+def set_active(acc_id: str) -> dict | None:
+    """활성 계정을 변경합니다."""
+    items = list_accounts()
+    found = False
+    for a in items:
+        a["active"] = (a["id"] == acc_id)
+        found = found or a["active"]
+    if not found and items:
+        items[0]["active"] = True
+    _save_raw(items)
+    return get_active()
 
 
 def _fetch_profile(user_id: str, token: str) -> dict:
@@ -83,6 +108,7 @@ def add_account(label: str, user_id: str, token: str) -> dict:
         "access_token": token.strip(),
         "username": prof.get("username", ""),
         "profile_pic": prof.get("profile_pic", ""),
+        "active": len(items) == 0,  # 첫 계정이면 활성
     }
     items.append(acc)
     _save_raw(items)
