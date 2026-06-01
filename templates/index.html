@@ -382,6 +382,7 @@ $("fileInput").onchange = async (e) => {
   const fd = new FormData();
   files.forEach((f) => fd.append("files", f));
   fd.append("write", writing ? "1" : "0");
+  fd.append("category", SEL_CAT);
   try {
     const resp = await fetch("/api/upload_media", { method: "POST", body: fd });
     const j = await resp.json();

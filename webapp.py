@@ -345,11 +345,14 @@ def api_upload_media():
         try:
             config.require_anthropic()
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+            category = (request.form.get("category") or "").strip()
+            from threads_auto import samples
+            examples = samples.get_samples(category, limit=10) if category else []
             if is_video:
                 imgs = [(fr, "image/jpeg") for fr in frames]
-                text = pipe.write_from_images(imgs, is_video=True)
+                text = pipe.write_from_images(imgs, is_video=True, category=category, examples=examples)
             else:
-                text = pipe.write_from_images(frames, is_video=False)
+                text = pipe.write_from_images(frames, is_video=False, category=category, examples=examples)
         except Exception as exc:  # noqa: BLE001
             text_error = str(exc)
 
