@@ -1,42 +1,55 @@
 #!/bin/bash
 # ─────────────────────────────────────────────
 #  인스타 스튜디오 — 더블클릭 실행 앱
-#  옛날 서버를 깨끗이 정리하고, 이 폴더의 최신 코드로 서버를 켭니다.
-#  (창 없이 백그라운드 실행 + 알림 + 브라우저 자동 열기)
+#  (맥 보안 '앱 격리'로 앱이 임시 위치에서 실행돼도, 다운로드 폴더에서
+#   프로젝트를 자동으로 찾아 동작하도록 만듦)
 # ─────────────────────────────────────────────
 
-# 이 앱은 프로젝트 폴더 안에 있음:  <프로젝트>/InstaStudio.app/Contents/MacOS/start
-cd "$(dirname "$0")/../../.." || exit 1
-ROOT="$(pwd)"
+export PATH="/usr/bin:/usr/local/bin:/opt/homebrew/bin:/Library/Frameworks/Python.framework/Versions/Current/bin:$PATH"
 
 notify() { osascript -e "display notification \"$1\" with title \"인스타 스튜디오\"" 2>/dev/null; }
 alertbox() { osascript -e "display dialog \"$1\" buttons {\"확인\"} with title \"인스타 스튜디오\"" 2>/dev/null; }
 
-# 0) 옛 자동실행/서버 완전 제거 (옛 코드를 붙잡는 주범)
+# 프로젝트 폴더 찾기: ①앱 옆 ②다운로드 ③바탕화면 ④홈  순으로 requirements.txt 있는 곳
+ROOT=""
+appdir="$(cd "$(dirname "$0")/../../.." 2>/dev/null && pwd)"
+for d in "$appdir" \
+  $(ls -dt "$HOME"/Downloads/*instagram-ai-automation* 2>/dev/null) \
+  $(ls -dt "$HOME"/Desktop/*instagram-ai-automation* 2>/dev/null) \
+  $(ls -dt "$HOME"/*instagram-ai-automation* 2>/dev/null); do
+  if [ -f "$d/requirements.txt" ]; then ROOT="$d"; break; fi
+done
+
+if [ -z "$ROOT" ]; then
+  alertbox "코드 폴더를 못 찾았어요. 최신 ZIP을 받아 '다운로드' 폴더에 압축을 푼 뒤 다시 실행해 주세요."
+  exit 1
+fi
+cd "$ROOT" || { alertbox "폴더 이동 실패: $ROOT"; exit 1; }
+
+# python3 확인
+PY="$(command -v python3)"
+if [ -z "$PY" ]; then
+  alertbox "python3 가 필요합니다. python.org 에서 설치한 뒤 다시 실행해 주세요."
+  exit 1
+fi
+
+# 옛 자동실행/서버 완전 제거
 launchctl unload "$HOME/Library/LaunchAgents/com.instaauto.server.plist" 2>/dev/null
 rm -f "$HOME/Library/LaunchAgents/com.instaauto.server.plist"
 lsof -ti :8000 2>/dev/null | xargs kill -9 2>/dev/null
 pkill -9 -f "web.server" 2>/dev/null
 sleep 1
 
-# 1) python3 확인
-if ! command -v python3 >/dev/null 2>&1; then
-  alertbox "python3 가 필요합니다. python.org 에서 설치한 뒤 다시 실행해 주세요."
-  exit 1
-fi
-
-# 2) 최초 1회 환경 설치
+# 최초 1회 환경 설치
 if [ ! -d "$ROOT/.venv" ]; then
   notify "처음 실행이라 환경을 설치합니다 (1~2분)…"
-  python3 -m venv "$ROOT/.venv" || { alertbox "환경 생성 실패"; exit 1; }
+  "$PY" -m venv "$ROOT/.venv" || { alertbox "환경 생성 실패 ($PY). 터미널에서 'python3 -m venv .venv' 가 되는지 확인이 필요합니다."; exit 1; }
   "$ROOT/.venv/bin/python" -m pip install --upgrade pip >/dev/null 2>&1
-  "$ROOT/.venv/bin/pip" install -r "$ROOT/requirements.txt" || { alertbox "설치 실패"; exit 1; }
+  "$ROOT/.venv/bin/pip" install -r "$ROOT/requirements.txt" || { alertbox "패키지 설치 실패"; exit 1; }
 fi
 
-# 3) 백그라운드로 서버 시작 (창 닫아도 유지)
+# 백그라운드 실행 + 브라우저 열기
 nohup "$ROOT/.venv/bin/python" -m web.server > "$ROOT/web_server.log" 2>&1 < /dev/null &
 sleep 4
-
-# 4) 브라우저 열기 + 알림
 open "http://localhost:8000"
-notify "서버 시작됨 → http://localhost:8000"
+notify "서버 시작됨 → http://localhost:8000 (브라우저에서 ⌘⇧R)"
