@@ -29,48 +29,73 @@ document.querySelectorAll(".tab").forEach((btn) => {
   };
 });
 
-// ---- 카테고리/주제 객관식 ----
+// ---- 카테고리/주제/키커/톤 객관식 ----
 let CATS = {};
+let KICKERS = {};
+let TONES = [];
+let DEFAULT_KICKERS = [];
 const CUSTOM = "✏️ 직접 입력";
+const NONE = "(없음)";
 
-async function loadCategories() {
+function fillSelect(id, items, { custom = false, none = false } = {}) {
+  const sel = $(id);
+  sel.innerHTML = "";
+  if (none) sel.appendChild(new Option(NONE, NONE));
+  items.forEach((t) => sel.appendChild(new Option(t, t)));
+  if (custom) sel.appendChild(new Option(CUSTOM, CUSTOM));
+}
+
+async function loadOptions() {
   try {
-    CATS = await api("/api/categories");
+    const o = await api("/api/options");
+    CATS = o.topics || {};
+    KICKERS = o.kickers || {};
+    TONES = o.tones || [];
+    DEFAULT_KICKERS = o.default_kickers || [];
   } catch (e) {
-    CATS = {};
+    try { CATS = await api("/api/categories"); } catch (_) { CATS = {}; }
   }
-  const cat = $("category");
-  cat.innerHTML = "";
-  Object.keys(CATS).forEach((c) => {
-    const o = document.createElement("option");
-    o.value = c; o.textContent = c;
-    cat.appendChild(o);
-  });
-  cat.onchange = fillTopics;
+  fillSelect("category", Object.keys(CATS));
+  $("category").onchange = () => { fillTopics(); fillKickers(); };
+  fillSelect("tone-select", TONES, { custom: true });
+  $("tone-select").onchange = () =>
+    ($("tone").style.display = $("tone-select").value === CUSTOM ? "block" : "none");
   fillTopics();
+  fillKickers();
+  if (!Object.keys(CATS).length)
+    toast("카테고리를 못 불러왔어요. 서버를 재시작해 주세요.", "err");
 }
 
 function fillTopics() {
+  fillSelect("topic-select", CATS[$("category").value] || [], { custom: true });
   const sel = $("topic-select");
-  sel.innerHTML = "";
-  (CATS[$("category").value] || []).forEach((t) => {
-    const o = document.createElement("option");
-    o.value = t; o.textContent = t;
-    sel.appendChild(o);
-  });
-  const c = document.createElement("option");
-  c.value = CUSTOM; c.textContent = CUSTOM;
-  sel.appendChild(c);
-  sel.onchange = () => {
-    $("topic").style.display = sel.value === CUSTOM ? "block" : "none";
-  };
+  sel.onchange = () =>
+    ($("topic").style.display = sel.value === CUSTOM ? "block" : "none");
+  sel.onchange();
+}
+
+function fillKickers() {
+  const list = KICKERS[$("category").value] || DEFAULT_KICKERS;
+  fillSelect("kicker-select", list, { custom: true, none: true });
+  const sel = $("kicker-select");
+  sel.onchange = () =>
+    ($("kicker").style.display = sel.value === CUSTOM ? "block" : "none");
   sel.onchange();
 }
 
 function selectedTopic() {
   const sel = $("topic-select");
-  if (sel.value === CUSTOM) return $("topic").value.trim();
-  return sel.value;
+  return sel.value === CUSTOM ? $("topic").value.trim() : sel.value;
+}
+function selectedKicker() {
+  const v = $("kicker-select").value;
+  if (v === NONE) return null;
+  if (v === CUSTOM) return $("kicker").value.trim() || null;
+  return v;
+}
+function selectedTone() {
+  const v = $("tone-select").value;
+  return v === CUSTOM ? ($("tone").value.trim() || null) : v;
 }
 
 // ---- 설정 로드/저장 ----
@@ -162,11 +187,11 @@ async function generate() {
       mode: $("mode").value,
       theme: $("theme").value,
       cards: parseInt($("cards").value) || 5,
-      tone: $("tone").value.trim() || null,
+      tone: selectedTone(),
       brand_handle: $("brand").value.trim() || null,
       agentic: $("agentic").checked,
       number: parseInt($("number").value) || null,
-      kicker: $("kicker").value.trim() || null,
+      kicker: selectedKicker(),
     };
     const r = await api("/api/generate", { method: "POST", body: JSON.stringify(payload) });
     currentJob = r.job_id;
@@ -230,5 +255,5 @@ $("btn-publish").onclick = async () => {
 }
 
 // ---- 초기화 ----
-loadCategories();
+loadOptions();
 loadSettings();

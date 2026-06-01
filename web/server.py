@@ -73,6 +73,13 @@ def get_categories():
     return TOPICS
 
 
+@app.get("/api/options")
+def get_options():
+    from instagram_auto.topics_library import KICKERS, TONES, TOPICS, DEFAULT_KICKERS
+    return {"topics": TOPICS, "kickers": KICKERS, "tones": TONES,
+            "default_kickers": DEFAULT_KICKERS}
+
+
 @app.get("/api/settings")
 def get_settings():
     return settings_mod.masked_settings()

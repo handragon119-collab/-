@@ -61,19 +61,23 @@
         <div class="row">
           <div>
             <label>시리즈 번호 (선택)</label>
-            <input id="number" type="number" placeholder="1 → NO.01" min="1" />
+            <input id="number" type="number" placeholder="비워도 됨" min="1" />
+            <p class="help">여러 편 시리즈일 때 표지에 <b>NO.01</b> 배지로 표시돼요</p>
           </div>
           <div class="grow">
             <label>계정 핸들</label>
-            <input id="brand" type="text" placeholder="@my_account" />
+            <input id="brand" type="text" placeholder="@내아이디" />
+            <p class="help">카드 하단에 들어갈 <b>내 인스타 아이디</b></p>
           </div>
         </div>
 
-        <label>카테고리 키커 (선택)</label>
-        <input id="kicker" type="text" placeholder="예) 금융 가이드" />
+        <label>카테고리 키커 (선택) — 표지 상단 문구</label>
+        <select id="kicker-select"></select>
+        <input id="kicker" type="text" placeholder="직접 입력할 키커" style="display:none;margin-top:8px" />
 
         <label>톤앤매너 (선택)</label>
-        <input id="tone" type="text" placeholder="예) 친근하고 신뢰감 있는" />
+        <select id="tone-select"></select>
+        <input id="tone" type="text" placeholder="직접 입력할 톤" style="display:none;margin-top:8px" />
 
         <label class="check"><input id="agentic" type="checkbox" />
           🤖 고급 에이전트 모드 (리서치·팩트검증·SEO·리스크 7단계)</label>
