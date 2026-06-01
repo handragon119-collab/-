@@ -1,0 +1,4 @@
+#!/bin/bash
+# 스레드 자동 업로드 앱 실행기.
+# 더블클릭하면 터미널에서 실행 스크립트(최신 코드 받기 + 서버 켜기 + 브라우저 열기)를 띄웁니다.
+exec open -a Terminal "$HOME/threads-auto/스레드앱_실행.command"
