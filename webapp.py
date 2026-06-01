@@ -19,6 +19,7 @@ import config
 import random
 
 from threads_auto import safety
+from threads_auto import accounts
 from threads_auto.content_generator import (
     ContentGenerator,
     load_categorized_topics,
@@ -321,14 +322,37 @@ def api_upload_image():
     return jsonify({"ok": True, "image_url": url, "text": text, "text_error": text_error})
 
 
+@app.get("/api/accounts")
+def api_accounts():
+    """등록된 계정 목록(토큰 숨김)을 반환합니다."""
+    return jsonify({"ok": True, "accounts": accounts.public_list()})
+
+
+@app.post("/api/accounts")
+def api_add_account():
+    """계정을 추가합니다. (label, user_id, access_token)"""
+    data = request.get_json(silent=True) or {}
+    label = (data.get("label") or "").strip()
+    user_id = (data.get("user_id") or "").strip()
+    token = (data.get("access_token") or "").strip()
+    if not user_id or not token:
+        return jsonify({"ok": False, "error": "사용자 ID와 토큰을 모두 입력하세요."}), 400
+    if not token.isascii():
+        return jsonify({"ok": False, "error": "토큰에 한글·공백이 섞였습니다. 다시 확인하세요."}), 400
+    acc = accounts.add_account(label, user_id, token)
+    return jsonify({"ok": True, "id": acc["id"]})
+
+
+@app.post("/api/accounts/delete")
+def api_delete_account():
+    data = request.get_json(silent=True) or {}
+    accounts.delete_account((data.get("id") or "").strip())
+    return jsonify({"ok": True})
+
+
 @app.post("/api/post")
 def api_post():
-    """입력된 글을 스레드에 게시합니다. image_url이 있으면 이미지와 함께 게시합니다."""
-    try:
-        config.require_threads()
-    except RuntimeError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-
+    """선택한 계정(들)에 글을 게시합니다. image_url이 있으면 이미지와 함께 게시."""
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     image_url = (data.get("image_url") or "").strip() or None
@@ -337,39 +361,46 @@ def api_post():
     if len(text) > 500:
         return jsonify({"ok": False, "error": f"글이 너무 깁니다({len(text)}자). 500자 이내로 줄여주세요."}), 400
 
+    # 게시 대상 계정 선택 (account_ids 없으면 전체)
+    all_accs = accounts.list_accounts()
+    if not all_accs:
+        return jsonify({"ok": False, "error": "등록된 계정이 없습니다. '계정' 탭에서 추가하세요."}), 400
+    acc_ids = data.get("account_ids") or []
+    targets = [a for a in all_accs if a["id"] in acc_ids] if acc_ids else all_accs
+    if not targets:
+        return jsonify({"ok": False, "error": "게시할 계정을 선택하세요."}), 400
+
     ok, posted = safety.check_daily_limit(config.DAILY_POST_LIMIT)
     if not ok:
-        return (
-            jsonify(
-                {
-                    "ok": False,
-                    "error": f"최근 24시간 게시 수({posted})가 한도({config.DAILY_POST_LIMIT})에 도달했습니다.",
-                }
-            ),
-            429,
-        )
-
-    try:
-        client = ThreadsClient(config.THREADS_USER_ID, config.THREADS_ACCESS_TOKEN)
-        if image_url:
-            post_id = client.post_image(text, image_url)
-        else:
-            post_id = client.post_text(text)
-    except ThreadsError as exc:
-        return jsonify({"ok": False, "error": f"게시 실패: {exc}"}), 502
+        return jsonify({
+            "ok": False,
+            "error": f"최근 24시간 게시 수({posted})가 한도({config.DAILY_POST_LIMIT})에 도달했습니다.",
+        }), 429
 
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    record = {
-        "time": datetime.now().isoformat(timespec="seconds"),
-        "topic": data.get("topic"),
-        "text": text,
-        "post_id": post_id,
-        "image_url": image_url,
-    }
-    with LOG_PATH.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    results = []
+    for a in targets:
+        try:
+            client = ThreadsClient(a["user_id"], a["access_token"])
+            post_id = client.post_image(text, image_url) if image_url else client.post_text(text)
+            results.append({"label": a["label"], "ok": True, "post_id": post_id})
+            with LOG_PATH.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "time": datetime.now().isoformat(timespec="seconds"),
+                    "account": a["label"],
+                    "topic": data.get("topic"),
+                    "text": text,
+                    "post_id": post_id,
+                    "image_url": image_url,
+                }, ensure_ascii=False) + "\n")
+        except ThreadsError as exc:
+            results.append({"label": a["label"], "ok": False, "error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            results.append({"label": a["label"], "ok": False, "error": str(exc)})
 
-    return jsonify({"ok": True, "post_id": post_id})
+    success = sum(1 for r in results if r["ok"])
+    return jsonify({"ok": success > 0, "results": results,
+                    "summary": f"{success}/{len(results)} 계정 게시 성공"})
 
 
 @app.get("/api/topics")
