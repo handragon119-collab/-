@@ -49,25 +49,58 @@ def list_accounts() -> list[dict]:
 
 
 def public_list() -> list[dict]:
-    """화면 표시용(토큰은 숨김)."""
+    """화면 표시용(토큰은 숨김, 프로필 정보 포함)."""
     return [
         {"id": a["id"], "label": a.get("label", "계정"),
-         "user_id": a.get("user_id", "")}
+         "user_id": a.get("user_id", ""),
+         "username": a.get("username", ""),
+         "profile_pic": a.get("profile_pic", "")}
         for a in list_accounts()
     ]
 
 
+def _fetch_profile(user_id: str, token: str) -> dict:
+    """Threads에서 프로필(username, 사진)을 가져옵니다. 실패하면 빈 dict."""
+    try:
+        from threads_auto.threads_client import ThreadsClient
+
+        p = ThreadsClient(user_id, token).get_profile()
+        return {
+            "username": p.get("username", ""),
+            "profile_pic": p.get("threads_profile_picture_url", ""),
+        }
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def add_account(label: str, user_id: str, token: str) -> dict:
     items = list_accounts()
+    prof = _fetch_profile(user_id.strip(), token.strip())
     acc = {
         "id": uuid.uuid4().hex[:8],
-        "label": (label or "계정").strip(),
+        "label": (label or prof.get("username") or "계정").strip(),
         "user_id": user_id.strip(),
         "access_token": token.strip(),
+        "username": prof.get("username", ""),
+        "profile_pic": prof.get("profile_pic", ""),
     }
     items.append(acc)
     _save_raw(items)
     return acc
+
+
+def refresh_profiles() -> list[dict]:
+    """모든 계정의 프로필(username, 사진)을 다시 가져와 저장합니다."""
+    items = list_accounts()
+    for a in items:
+        prof = _fetch_profile(a.get("user_id", ""), a.get("access_token", ""))
+        if prof.get("username"):
+            a["username"] = prof["username"]
+            a["profile_pic"] = prof.get("profile_pic", "")
+            if a.get("label") in ("기본 계정", "계정", ""):
+                a["label"] = prof["username"]
+    _save_raw(items)
+    return items
 
 
 def delete_account(acc_id: str) -> None:

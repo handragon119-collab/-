@@ -138,6 +138,7 @@
     <div class="card">
       <label>등록된 계정</label>
       <div id="accountList"><p class="hint">불러오는 중…</p></div>
+      <button class="ghost" id="refreshAccBtn" style="margin-top:8px">🔄 계정 정보(아이디·사진) 새로고침</button>
 
       <div style="border-top:1px solid #eee;margin:16px 0 4px"></div>
       <label>새 계정 추가</label>
@@ -279,15 +280,20 @@ async function loadAccounts() {
   ACCOUNTS = (r.ok && r.accounts) ? r.accounts : [];
   if (SEL_ACCOUNTS === null) SEL_ACCOUNTS = new Set(ACCOUNTS.map((a) => a.id));
 
-  // 글쓰기 탭의 게시 계정 선택 칩
+  // 글쓰기 탭의 게시 계정 선택 칩 (프로필 사진 + 아이디 표시)
   const box = $("postAccounts");
+  const chipLabel = (a) => {
+    const name = a.username ? ("@" + a.username) : a.label;
+    const pic = a.profile_pic ? `<img src="${a.profile_pic}" style="width:18px;height:18px;border-radius:50%;vertical-align:-4px;margin-right:5px">` : "";
+    return pic + name;
+  };
   if (box) {
     if (!ACCOUNTS.length) {
       box.innerHTML = '<p class="hint">등록된 계정이 없어요. 👤 계정 탭에서 추가하세요.</p>';
     } else {
       box.innerHTML = ACCOUNTS.map((a) => {
         const sel = SEL_ACCOUNTS.has(a.id) ? " sel" : "";
-        return `<span class="chip-cat${sel}" data-acc="${a.id}">${a.label}</span>`;
+        return `<span class="chip-cat${sel}" data-acc="${a.id}">${chipLabel(a)}</span>`;
       }).join("");
       box.querySelectorAll(".chip-cat").forEach((el) => {
         el.onclick = () => {
@@ -299,15 +305,18 @@ async function loadAccounts() {
     }
   }
 
-  // 계정 탭의 목록 + 삭제
+  // 계정 탭의 목록 + 삭제 (프로필 사진 + @아이디)
   const list = $("accountList");
   if (list) {
     if (!ACCOUNTS.length) list.innerHTML = '<p class="hint">아직 계정이 없어요. 아래에서 추가하세요.</p>';
-    else list.innerHTML = ACCOUNTS.map((a) =>
-      `<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center">
-        <span><b>${a.label}</b> <span class="hint">(ID …${(a.user_id||"").slice(-4)})</span></span>
+    else list.innerHTML = ACCOUNTS.map((a) => {
+      const pic = a.profile_pic ? `<img src="${a.profile_pic}" style="width:38px;height:38px;border-radius:50%;margin-right:10px">` : '<span style="display:inline-block;width:38px;height:38px;border-radius:50%;background:#eee;margin-right:10px;text-align:center;line-height:38px">👤</span>';
+      const name = a.username ? ("@" + a.username) : "(아이디 미확인)";
+      return `<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center">
+        <span style="display:flex;align-items:center">${pic}<span><b>${name}</b><br><span class="hint">${a.label}</span></span></span>
         <button class="ghost" style="width:auto;padding:8px 14px" data-del="${a.id}">삭제</button>
-      </div>`).join("");
+      </div>`;
+    }).join("");
     list.querySelectorAll("[data-del]").forEach((el) => {
       el.onclick = async () => {
         if (!confirm("이 계정을 삭제할까요?")) return;
@@ -318,6 +327,13 @@ async function loadAccounts() {
     });
   }
 }
+
+$("refreshAccBtn").onclick = async () => {
+  toast("계정 정보 가져오는 중…");
+  const r = await api("/api/accounts/refresh", { method: "POST" });
+  if (r.ok) { toast("계정 정보를 새로고침했어요.", "ok"); loadAccounts(); }
+  else toast("새로고침 실패", "error");
+};
 
 $("addAccBtn").onclick = async () => {
   const label = $("accLabel").value.trim();

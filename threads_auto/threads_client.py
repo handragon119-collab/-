@@ -35,6 +35,17 @@ class ThreadsClient:
             )
         return resp.json()
 
+    def get_profile(self) -> dict:
+        """내 프로필(아이디·사진 등)을 가져옵니다."""
+        params = {
+            "fields": "id,username,threads_profile_picture_url,name",
+            "access_token": self.access_token,
+        }
+        resp = requests.get(f"{GRAPH_BASE}/me", params=params, timeout=self.timeout)
+        if resp.status_code >= 400:
+            raise ThreadsError(f"프로필 조회 실패 {resp.status_code}: {resp.text}")
+        return resp.json()
+
     def create_text_container(self, text: str) -> str:
         """텍스트 글 컨테이너를 만들고 creation_id를 반환합니다."""
         data = self._post(

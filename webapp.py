@@ -350,6 +350,13 @@ def api_delete_account():
     return jsonify({"ok": True})
 
 
+@app.post("/api/accounts/refresh")
+def api_refresh_accounts():
+    """각 계정의 스레드 프로필(아이디·사진)을 다시 가져옵니다."""
+    accounts.refresh_profiles()
+    return jsonify({"ok": True, "accounts": accounts.public_list()})
+
+
 @app.post("/api/post")
 def api_post():
     """선택한 계정(들)에 글을 게시합니다. image_url이 있으면 이미지와 함께 게시."""
