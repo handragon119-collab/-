@@ -50,6 +50,8 @@ def list_accounts() -> list[dict]:
 
 def public_list() -> list[dict]:
     """화면 표시용(토큰은 숨김, 프로필 정보 포함)."""
+    from threads_auto.pipeline import persona_label
+
     active = get_active()
     active_id = active["id"] if active else None
     return [
@@ -57,6 +59,8 @@ def public_list() -> list[dict]:
          "user_id": a.get("user_id", ""),
          "username": a.get("username", ""),
          "profile_pic": a.get("profile_pic", ""),
+         "persona": a.get("persona", "general"),
+         "persona_label": persona_label(a.get("persona", "general")),
          "active": a["id"] == active_id}
         for a in list_accounts()
     ]
@@ -98,7 +102,7 @@ def _fetch_profile(user_id: str, token: str) -> dict:
         return {}
 
 
-def add_account(label: str, user_id: str, token: str) -> dict:
+def add_account(label: str, user_id: str, token: str, persona: str = "general") -> dict:
     items = list_accounts()
     prof = _fetch_profile(user_id.strip(), token.strip())
     acc = {
@@ -108,11 +112,21 @@ def add_account(label: str, user_id: str, token: str) -> dict:
         "access_token": token.strip(),
         "username": prof.get("username", ""),
         "profile_pic": prof.get("profile_pic", ""),
+        "persona": persona or "general",
         "active": len(items) == 0,  # 첫 계정이면 활성
     }
     items.append(acc)
     _save_raw(items)
     return acc
+
+
+def set_persona(acc_id: str, persona: str) -> None:
+    """계정의 페르소나(말투)를 변경합니다."""
+    items = list_accounts()
+    for a in items:
+        if a["id"] == acc_id:
+            a["persona"] = persona or "general"
+    _save_raw(items)
 
 
 def refresh_profiles() -> list[dict]:

@@ -40,6 +40,17 @@ def _resolve_topic(topic: str | None, category: str | None) -> str | None:
         pool = [t for items in cats.values() for t in items]
     return random.choice(pool) if pool else None
 
+
+def _active_persona():
+    """현재 활성 계정의 (페르소나, 학습예시, 계정ID)를 반환."""
+    from threads_auto import samples
+    acc = accounts.get_active()
+    if not acc:
+        return "general", [], None
+    persona = acc.get("persona", "general")
+    examples = samples.get_samples(acc["id"], persona, limit=10)
+    return persona, examples, acc["id"]
+
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.cron import CronTrigger
@@ -157,10 +168,11 @@ def api_generate():
     advanced = bool(data.get("advanced", True))  # 기본: 고급 파이프라인
     topic = _resolve_topic(topic, category)
 
+    persona, examples, _ = _active_persona()
     try:
         if advanced and topic:
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            result = pipe.run(topic, category)
+            result = pipe.run(topic, persona=persona, examples=examples)
             return jsonify({
                 "ok": True, "text": result["text"], "topic": topic,
                 "length": len(result["text"]), "meta": result["meta"],
@@ -195,11 +207,12 @@ def api_auto():
     advanced = bool(data.get("advanced", True))
     topic = _resolve_topic(topic, category)
 
+    persona, examples, _ = _active_persona()
     pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
     meta = None
     try:
         if advanced and topic:
-            result = pipe.run(topic, category)
+            result = pipe.run(topic, persona=persona, examples=examples)
             text = result["text"]
             meta = result["meta"]
         else:
@@ -345,14 +358,14 @@ def api_upload_media():
         try:
             config.require_anthropic()
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            category = (request.form.get("category") or "").strip()
-            from threads_auto import samples
-            examples = samples.get_samples(category, limit=10) if category else []
+            from threads_auto.pipeline import persona_style
+            persona, examples, _ = _active_persona()
+            style_extra = persona_style(persona)
             if is_video:
                 imgs = [(fr, "image/jpeg") for fr in frames]
-                text = pipe.write_from_images(imgs, is_video=True, category=category, examples=examples)
+                text = pipe.write_from_images(imgs, is_video=True, style_extra=style_extra, examples=examples)
             else:
-                text = pipe.write_from_images(frames, is_video=False, category=category, examples=examples)
+                text = pipe.write_from_images(frames, is_video=False, style_extra=style_extra, examples=examples)
         except Exception as exc:  # noqa: BLE001
             text_error = str(exc)
 
@@ -368,19 +381,35 @@ def api_accounts():
     return jsonify({"ok": True, "accounts": accounts.public_list()})
 
 
+@app.get("/api/personas")
+def api_personas():
+    """선택 가능한 페르소나(말투) 목록."""
+    from threads_auto.pipeline import PERSONAS
+    return jsonify({"ok": True, "personas": [{"id": k, "label": v[0]} for k, v in PERSONAS.items()]})
+
+
 @app.post("/api/accounts")
 def api_add_account():
-    """계정을 추가합니다. (label, user_id, access_token)"""
+    """계정을 추가합니다. (label, user_id, access_token, persona)"""
     data = request.get_json(silent=True) or {}
     label = (data.get("label") or "").strip()
     user_id = (data.get("user_id") or "").strip()
     token = (data.get("access_token") or "").strip()
+    persona = (data.get("persona") or "general").strip()
     if not user_id or not token:
         return jsonify({"ok": False, "error": "사용자 ID와 토큰을 모두 입력하세요."}), 400
     if not token.isascii():
         return jsonify({"ok": False, "error": "토큰에 한글·공백이 섞였습니다. 다시 확인하세요."}), 400
-    acc = accounts.add_account(label, user_id, token)
+    acc = accounts.add_account(label, user_id, token, persona=persona)
     return jsonify({"ok": True, "id": acc["id"]})
+
+
+@app.post("/api/accounts/persona")
+def api_set_persona():
+    """계정의 페르소나(말투)를 변경합니다."""
+    data = request.get_json(silent=True) or {}
+    accounts.set_persona((data.get("id") or "").strip(), (data.get("persona") or "general").strip())
+    return jsonify({"ok": True, "accounts": accounts.public_list()})
 
 
 @app.post("/api/accounts/delete")
@@ -459,11 +488,13 @@ def api_post():
             results.append({"label": a["label"], "ok": False, "error": str(exc)})
 
     success = sum(1 for r in results if r["ok"])
-    # 학습: 게시한 글을 그 카테고리 예시로 저장(다음 생성 때 톤 학습)
+    # 학습: 게시 성공한 '계정별'로 그 글을 학습 예시에 저장 (계정마다 톤 따로 쌓임)
     if success > 0:
         try:
             from threads_auto import samples
-            samples.add_sample((data.get("category") or "").strip(), text)
+            for a, r in zip(targets, results):
+                if r.get("ok"):
+                    samples.add_sample(a["id"], text)
         except Exception:  # noqa: BLE001
             pass
     return jsonify({"ok": success > 0, "results": results,

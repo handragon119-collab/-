@@ -186,11 +186,12 @@
       <button class="ghost" id="refreshAccBtn" style="margin-top:8px">🔄 계정 정보(아이디·사진) 새로고침</button>
       <hr class="divider" />
       <label>새 계정 추가</label>
-      <input type="text" id="accLabel" placeholder="계정 이름(메모, 예: 메인)" style="margin-bottom:8px" />
+      <input type="text" id="accLabel" placeholder="계정 이름(메모, 예: 김피엔 / 우리사진관)" style="margin-bottom:8px" />
       <input type="text" id="accUserId" placeholder="THREADS_USER_ID (사용자 ID 숫자)" style="margin-bottom:8px" />
       <input type="text" id="accToken" placeholder="THREADS_ACCESS_TOKEN (긴 토큰)" style="margin-bottom:8px" />
+      <select id="accPersona" style="margin-bottom:8px"></select>
       <button class="primary" id="addAccBtn">➕ 계정 추가</button>
-      <p class="hint">계정마다 토큰이 필요해요. (토큰은 이 컴퓨터에만 저장됩니다)</p>
+      <p class="hint">말투(페르소나)는 계정마다 따로예요. 이 계정으로 글 쓰면 항상 이 말투로 나오고, 학습도 이 계정에만 쌓여요. (토큰은 이 컴퓨터에만 저장)</p>
     </div>
   </div>
 
@@ -307,9 +308,20 @@ async function loadCategories() {
   });
 }
 
+// 페르소나 목록
+let PERSONAS = [];
+async function loadPersonas() {
+  const r = await api("/api/personas");
+  PERSONAS = (r.ok && r.personas) ? r.personas : [];
+  const sel = $("accPersona");
+  if (sel) sel.innerHTML = PERSONAS.map((p) => `<option value="${p.id}">${p.label}</option>`).join("");
+}
+const personaOptions = (cur) => PERSONAS.map((p) => `<option value="${p.id}"${p.id === cur ? " selected" : ""}>${p.label}</option>`).join("");
+
 // 계정
 let ACCOUNTS = [], SEL_ACCOUNTS = null;
 async function loadAccounts() {
+  if (!PERSONAS.length) await loadPersonas();
   const r = await api("/api/accounts");
   ACCOUNTS = (r.ok && r.accounts) ? r.accounts : [];
   const act = ACCOUNTS.find((a) => a.active) || ACCOUNTS[0];
@@ -319,7 +331,7 @@ async function loadAccounts() {
   if (act) {
     const pic = act.profile_pic ? `<img src="${act.profile_pic}">` : "👤";
     const name = act.username ? ("@" + act.username) : act.label;
-    cur.innerHTML = `<span style="display:flex;align-items:center;gap:8px">${pic}<b>${name}</b><span class="hint" style="margin:0">(으)로 게시</span></span>
+    cur.innerHTML = `<span style="display:flex;align-items:center;gap:8px">${pic}<span><b>${name}</b><br><span class="hint" style="margin:0">${act.persona_label || ""} 말투</span></span></span>
       <button class="ghost" id="switchAcctBtn" style="width:auto;padding:9px 14px">계정 변경</button>`;
     $("switchAcctBtn").onclick = () => document.querySelector('.tab[data-tab="accounts"]').click();
   } else {
@@ -344,7 +356,11 @@ async function loadAccounts() {
     const pic = a.profile_pic ? `<img src="${a.profile_pic}">` : '<span class="ph">👤</span>';
     const name = a.username ? ("@" + a.username) : "(아이디 미확인)";
     const sw = a.active ? '<span class="badge on">● 사용 중</span>' : `<button class="ghost" style="width:auto;padding:9px 12px" data-active="${a.id}">전환</button>`;
-    return `<div class="item acct-row"><span style="display:flex;align-items:center;gap:10px;min-width:0">${pic}<span style="min-width:0"><b>${name}</b><br><span class="hint" style="margin:0">${a.label}</span></span></span><span style="display:flex;gap:6px;flex-shrink:0">${sw}<button class="ghost" style="width:auto;padding:9px 12px" data-del="${a.id}">삭제</button></span></div>`;
+    return `<div class="item">
+      <div class="acct-row"><span style="display:flex;align-items:center;gap:10px;min-width:0">${pic}<span style="min-width:0"><b>${name}</b><br><span class="hint" style="margin:0">${a.label}</span></span></span>
+      <span style="display:flex;gap:6px;flex-shrink:0">${sw}<button class="ghost" style="width:auto;padding:9px 12px" data-del="${a.id}">삭제</button></span></div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px"><span class="hint" style="margin:0">말투</span><select data-persona="${a.id}" style="flex:1">${personaOptions(a.persona)}</select></div>
+    </div>`;
   }).join("") : '<p class="hint">아직 계정이 없어요.</p>';
   list.querySelectorAll("[data-active]").forEach((el) => el.onclick = async () => {
     const r2 = await api("/api/accounts/active", { method: "POST", body: JSON.stringify({ id: el.dataset.active }) });
@@ -355,12 +371,17 @@ async function loadAccounts() {
     await api("/api/accounts/delete", { method: "POST", body: JSON.stringify({ id: el.dataset.del }) });
     SEL_ACCOUNTS && SEL_ACCOUNTS.delete(el.dataset.del); toast("삭제됨", "ok"); loadAccounts();
   });
+  list.querySelectorAll("[data-persona]").forEach((el) => el.onchange = async () => {
+    const r2 = await api("/api/accounts/persona", { method: "POST", body: JSON.stringify({ id: el.dataset.persona, persona: el.value }) });
+    if (r2.ok) { toast("말투를 바꿨어요.", "ok"); loadAccounts(); loadStatus(); }
+  });
 }
 $("refreshAccBtn").onclick = async () => { toast("정보 가져오는 중…"); const r = await api("/api/accounts/refresh", { method: "POST" }); if (r.ok) { toast("새로고침 완료", "ok"); loadAccounts(); loadStatus(); } };
 $("addAccBtn").onclick = async () => {
   const label = $("accLabel").value.trim(), user_id = $("accUserId").value.trim(), access_token = $("accToken").value.trim();
+  const persona = $("accPersona").value;
   if (!user_id || !access_token) return toast("ID와 토큰을 입력하세요.", "error");
-  const r = await api("/api/accounts", { method: "POST", body: JSON.stringify({ label, user_id, access_token }) });
+  const r = await api("/api/accounts", { method: "POST", body: JSON.stringify({ label, user_id, access_token, persona }) });
   if (r.ok) { if (SEL_ACCOUNTS) SEL_ACCOUNTS.add(r.id); $("accLabel").value = $("accUserId").value = $("accToken").value = ""; toast("계정 추가됨", "ok"); loadAccounts(); }
   else toast(r.error || "추가 실패", "error");
 };
@@ -459,7 +480,7 @@ async function loadHistory() {
 }
 $("refreshHistBtn").onclick = loadHistory;
 
-loadStatus(); loadCategories(); loadAccounts();
+loadStatus(); loadCategories(); loadPersonas(); loadAccounts();
 setInterval(loadStatus, 15000);
 </script>
 </body>

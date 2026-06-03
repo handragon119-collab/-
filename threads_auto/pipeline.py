@@ -99,6 +99,22 @@ STYLE_BY_CATEGORY = {
     "사진관": STUDIO_STYLE,
 }
 
+# ── 페르소나(계정별 말투) ──
+# 계정마다 하나를 지정 → 그 계정으로 글쓰면 이 말투로 나온다.
+PERSONAS = {
+    "general": ("일반 (MZ 반말)", ""),
+    "pet": ("반려동물 · 강아지 1인칭 애교", PET_STYLE),
+    "studio": ("사진관 사장님 · 따뜻한 반말", STUDIO_STYLE),
+}
+
+
+def persona_style(persona_id: str) -> str:
+    return PERSONAS.get((persona_id or "general"), PERSONAS["general"])[1]
+
+
+def persona_label(persona_id: str) -> str:
+    return PERSONAS.get((persona_id or "general"), PERSONAS["general"])[0]
+
 
 class PipelineError(RuntimeError):
     """파이프라인 단계 실패 시 발생."""
@@ -215,24 +231,23 @@ class ThreadsPipeline:
             + joined + "\n"
         )
 
-    def write_styled(self, topic: str, category: str, examples: list[str]) -> str:
-        """리서치 없이, 카테고리 전용 문체 + 예시(few-shot)로 곧장 작성합니다.
+    def write_styled(self, topic: str, style_extra: str, examples: list[str]) -> str:
+        """리서치 없이, 계정 페르소나 문체 + 예시(few-shot)로 곧장 작성합니다.
 
-        반려동물처럼 고유 말투가 강한 카테고리에 사용 (일반 리서치가 톤을 망치는 것 방지).
+        말투가 강한 페르소나(강아지/사장님)에 사용 — 일반 리서치가 톤을 망치는 것 방지.
         """
-        system = STYLE_GUIDE + STYLE_BY_CATEGORY.get(category, "")
+        system = STYLE_GUIDE + (style_extra or "")
         user = (
             f"[이번에 쓸 주제] {topic}\n"
             + self._examples_block(examples)
-            + "\n위 예시들의 '느낌'으로, 이 주제에 맞는 새 게시글 한 편을 써라. "
-            "반려동물 계정이면 반드시 반려동물 본인(1인칭) 시점으로, 짧고 통통 튀게. "
-            "예시처럼 애교 말투·이모지·스하리/반하리 같은 표현을 살려라."
+            + "\n위 문체 가이드의 '화자 시점·말투'를 반드시 지키고, 예시들의 '느낌'으로 "
+            "이 주제에 맞는 새 게시글 한 편을 써라. 짧고 통통 튀게. 문장 복붙은 금지."
         )
         text = self._complete(system, user, max_tokens=800)
         return text[:260].rstrip() if len(text) > 260 else text
 
     def write(self, topic: str, research: dict, facts: dict,
-              category: str | None = None, examples: list[str] | None = None) -> str:
+              style_extra: str = "", examples: list[str] | None = None) -> str:
         brief = [f"주제: {topic}"]
         if research.get("angle"):
             brief.append(f"차별화 각도: {research['angle']}")
@@ -254,7 +269,7 @@ class ThreadsPipeline:
         else:
             brief.append("이 글엔 검증된 사실 데이터가 없으니, 수치·단정적 주장은 쓰지 마라.")
 
-        system = STYLE_GUIDE + STYLE_BY_CATEGORY.get((category or "").strip(), "")
+        system = STYLE_GUIDE + (style_extra or "")
         user = "\n".join(brief) + self._examples_block(examples or []) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게."
         text = self._complete(system, user, max_tokens=800)
         if len(text) > 260:
@@ -266,16 +281,15 @@ class ThreadsPipeline:
         return self.write_from_images([(image_bytes, media_type)])
 
     def write_from_images(self, images: list[tuple[bytes, str]],
-                          is_video: bool = False, category: str | None = None,
+                          is_video: bool = False, style_extra: str = "",
                           examples: list[str] | None = None) -> str:
         """사진 여러 장(또는 영상 프레임들)을 보고 어울리는 스레드 글을 작성합니다.
 
-        category가 주어지면 그 카테고리 전용 문체 + 학습 예시(few-shot)를 적용합니다.
+        style_extra(계정 페르소나 문체) + 학습 예시(few-shot)를 적용합니다.
         """
         import base64
 
-        cat = (category or "").strip()
-        system = STYLE_GUIDE + STYLE_BY_CATEGORY.get(cat, "")
+        system = STYLE_GUIDE + (style_extra or "")
 
         content = []
         for img_bytes, media_type in images[:8]:
@@ -295,13 +309,11 @@ class ThreadsPipeline:
         else:
             base = "이 사진을 보고, 사진 속 분위기·디테일에 딱 맞는 스레드 글을 써줘."
 
-        if cat in STYLE_BY_CATEGORY:
-            # 반려동물 등: 그 카테고리 전용 톤을 반드시 적용
+        if style_extra:
             base += (
-                " 반드시 반려동물 본인(1인칭) 시점의 애교 말투로 써. "
-                "사진/영상 속 모습을 강아지(또는 고양이)가 직접 말하듯 표현하고, "
-                "안농·칭구·~해조 같은 말투와 이모지, 그리고 어울리면 스하리=반하리 같은 표현도 살려. "
-                "아래 예시들의 '느낌'을 그대로 따라(복붙은 금지)."
+                " 반드시 위 문체 가이드의 '화자 시점·말투'를 그대로 지켜서 써. "
+                "사진/영상 속 모습을 그 화자가 직접 보고 말하듯 표현하고, "
+                "아래 예시들의 '느낌'을 따라(복붙은 금지)."
             )
         else:
             base += " 설명문이 아니라 감정·장면이 담긴 글로."
@@ -332,18 +344,17 @@ class ThreadsPipeline:
         return self._complete(system, user, max_tokens=400)
 
     # ── 전체 실행 ──
-    def run(self, topic: str, category: str | None = None) -> dict:
+    def run(self, topic: str, persona: str = "general",
+            examples: list[str] | None = None) -> dict:
         """리서치→(팩트)→글쓰기. {text, meta} 반환.
 
-        고유 문체 카테고리(반려동물 등)는 리서치를 건너뛰고 예시 기반으로 곧장 작성.
+        말투가 강한 페르소나(강아지/사장님)는 리서치를 건너뛰고 예시 기반으로 곧장 작성.
         """
-        from threads_auto import samples as samples_mod
+        style_extra = persona_style(persona)
+        examples = examples or []
 
-        cat = (category or "").strip()
-        examples = samples_mod.get_samples(cat, limit=10) if cat else []
-
-        if cat and cat in STYLE_BY_CATEGORY:
-            text = self.write_styled(topic, cat, examples)
+        if style_extra:
+            text = self.write_styled(topic, style_extra, examples)
             return {"text": text, "meta": {"angle": "", "sensitivity": "low",
                                            "sensitivity_note": "", "facts": []}}
 
@@ -351,7 +362,7 @@ class ThreadsPipeline:
         facts = {"verified_facts": [], "note": ""}
         if research.get("needs_facts"):
             facts = self.factcheck(topic, research.get("angle", ""))
-        text = self.write(topic, research, facts, category=cat, examples=examples)
+        text = self.write(topic, research, facts, style_extra=style_extra, examples=examples)
         return {
             "text": text,
             "meta": {
