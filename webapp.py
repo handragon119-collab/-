@@ -358,14 +358,15 @@ def api_upload_media():
         try:
             config.require_anthropic()
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            from threads_auto.pipeline import persona_style
+            from threads_auto.pipeline import persona_style, persona_vision_mode
             persona, examples, _ = _active_persona()
             style_extra = persona_style(persona)
+            vmode = persona_vision_mode(persona)
             if is_video:
                 imgs = [(fr, "image/jpeg") for fr in frames]
-                text = pipe.write_from_images(imgs, is_video=True, style_extra=style_extra, examples=examples)
+                text = pipe.write_from_images(imgs, is_video=True, style_extra=style_extra, examples=examples, vision_mode=vmode)
             else:
-                text = pipe.write_from_images(frames, is_video=False, style_extra=style_extra, examples=examples)
+                text = pipe.write_from_images(frames, is_video=False, style_extra=style_extra, examples=examples, vision_mode=vmode)
         except Exception as exc:  # noqa: BLE001
             text_error = str(exc)
 

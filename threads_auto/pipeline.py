@@ -137,6 +137,16 @@ def persona_label(persona_id: str) -> str:
     return PERSONAS.get((persona_id or "general"), PERSONAS["general"])[0]
 
 
+# 사진/영상 보고 글쓸 때 시점:
+#  - subject : 사진 속 주인공이 곧 화자 (강아지 1인칭, 내 셀카 등)
+#  - owner   : 사진 속은 '손님', 화자는 그걸 찍어준 주인(사진관/크리에이터)
+_VISION_MODE = {"pet": "subject", "general": "subject", "studio": "owner", "founder": "owner"}
+
+
+def persona_vision_mode(persona_id: str) -> str:
+    return _VISION_MODE.get(persona_id or "general", "subject")
+
+
 class PipelineError(RuntimeError):
     """파이프라인 단계 실패 시 발생."""
 
@@ -303,10 +313,12 @@ class ThreadsPipeline:
 
     def write_from_images(self, images: list[tuple[bytes, str]],
                           is_video: bool = False, style_extra: str = "",
-                          examples: list[str] | None = None) -> str:
+                          examples: list[str] | None = None,
+                          vision_mode: str = "subject") -> str:
         """사진 여러 장(또는 영상 프레임들)을 보고 어울리는 스레드 글을 작성합니다.
 
         style_extra(계정 페르소나 문체) + 학습 예시(few-shot)를 적용합니다.
+        vision_mode: 'subject'(사진 속 주인공=화자) / 'owner'(사진 속=손님, 화자=찍어준 주인)
         """
         import base64
 
@@ -323,21 +335,30 @@ class ThreadsPipeline:
                 },
             })
 
-        if is_video:
-            base = "위 이미지들은 한 동영상에서 뽑은 장면들이야. 영상의 흐름·분위기를 파악해서 어울리는 스레드 글을 써줘."
-        elif len(images) > 1:
-            base = "위 사진들을 모두 보고, 사진들이 담은 분위기·이야기에 어울리는 스레드 글을 한 편 써줘."
-        else:
-            base = "이 사진을 보고, 사진 속 분위기·디테일에 딱 맞는 스레드 글을 써줘."
+        what = "이 동영상" if is_video else ("이 사진들" if len(images) > 1 else "이 사진")
 
-        if style_extra:
-            base += (
-                " 반드시 위 문체 가이드의 '화자 시점·말투'를 그대로 지켜서 써. "
-                "사진/영상 속 모습을 그 화자가 직접 보고 말하듯 표현하고, "
-                "아래 예시들의 '느낌'을 따라(복붙은 금지)."
+        # 정확성: 사진에 실제 보이는 것만, 추측·날조 금지
+        accuracy = (
+            f"먼저 {what}에 실제로 보이는 것을 잘 관찰해. "
+            "성별·나이·인물 정보는 확실할 때만 언급하고, 애매하면 아예 언급하지 마라(추측 금지). "
+            f"{what}에 없는 장면·소품·상황을 절대 지어내지 마라. 실제 보이는 것에 충실하게 써라. "
+        )
+
+        if vision_mode == "owner":
+            base = accuracy + (
+                f"중요: {what}은 내가(사진관 주인/크리에이터) '찍어준 손님'의 사진이야. "
+                "화자는 이걸 찍어준 나(주인)다. 사진 속 인물(손님) 시점으로 쓰거나, "
+                "'내가 찍으러 갔는데' 같은 손님 시점으로 쓰면 절대 안 돼. "
+                "'오늘 이런 손님을 찍어드렸어' 처럼, 내가 찍어준 입장에서 그 손님·그 컷에 대한 "
+                "내 감정·생각을 위 문체 가이드의 말투로 써라."
+            )
+        elif style_extra:
+            base = accuracy + (
+                "위 문체 가이드의 '화자 시점·말투'를 그대로 지켜서, "
+                f"{what} 속 모습을 그 화자가 직접 보고 말하듯 써라. 아래 예시들의 '느낌'을 따라(복붙 금지)."
             )
         else:
-            base += " 설명문이 아니라 감정·장면이 담긴 글로."
+            base = accuracy + "설명문이 아니라 감정·장면이 담긴 글로 써라."
         base += " 반드시 200자 이내로 짧게."
 
         content.append({"type": "text", "text": base + self._examples_block(examples or [])})
