@@ -359,15 +359,16 @@ def api_upload_media():
         try:
             config.require_anthropic()
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            from threads_auto.pipeline import persona_style, persona_vision_mode
+            from threads_auto.pipeline import persona_style, persona_vision_mode, persona_facts
             persona, examples, _ = _active_persona()
             style_extra = persona_style(persona)
             vmode = persona_vision_mode(persona)
+            facts = persona_facts(persona)
             if is_video:
                 imgs = [(fr, "image/jpeg") for fr in frames]
-                text = pipe.write_from_images(imgs, is_video=True, style_extra=style_extra, examples=examples, vision_mode=vmode)
+                text = pipe.write_from_images(imgs, is_video=True, style_extra=style_extra, examples=examples, vision_mode=vmode, facts=facts)
             else:
-                text = pipe.write_from_images(frames, is_video=False, style_extra=style_extra, examples=examples, vision_mode=vmode)
+                text = pipe.write_from_images(frames, is_video=False, style_extra=style_extra, examples=examples, vision_mode=vmode, facts=facts)
         except Exception as exc:  # noqa: BLE001
             text_error = str(exc)
 
@@ -523,15 +524,16 @@ def api_reply_run():
     data = request.get_json(silent=True) or {}
     max_replies = int(data.get("max", 0))  # 0 = 수량 제한 없음
 
-    from threads_auto.pipeline import persona_style
+    from threads_auto.pipeline import persona_style, persona_facts
     from threads_auto import samples, replies as replies_mod
     persona = acc.get("persona", "general")
     style_extra = persona_style(persona)
+    facts = persona_facts(persona)
     examples = samples.get_samples(acc["id"], persona, limit=8)
     pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
 
     def reply_fn(post_text, comment_text):
-        return pipe.write_reply(style_extra, examples, post_text, comment_text)
+        return pipe.write_reply(style_extra, examples, post_text, comment_text, facts=facts)
 
     _reply_job.update(running=True, results=[], summary="진행 중…", stop=False)
 

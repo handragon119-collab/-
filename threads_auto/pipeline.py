@@ -149,6 +149,27 @@ def persona_vision_mode(persona_id: str) -> str:
     return _VISION_MODE.get(persona_id or "general", "subject")
 
 
+# 페르소나(계정)별 '사실 정보' — 가격·이벤트 등. 손님이 묻거나 자연스러울 때만 사용.
+PERSONA_FACTS = {
+    "studio": "현재 가격·이벤트: 프로필 촬영 특가 5만원, 퍼스널컬러 기반 촬영(이름 '컬러증명') 4만원.",
+    "founder": "내 사진 사업 현재 가격·이벤트: 프로필 촬영 특가 5만원, 퍼스널컬러 기반 촬영(이름 '컬러증명') 4만원.",
+}
+
+
+def persona_facts(persona_id: str) -> str:
+    return PERSONA_FACTS.get(persona_id or "", "")
+
+
+def _facts_block(facts: str) -> str:
+    if not facts:
+        return ""
+    return (
+        "\n[참고용 사실 정보] " + facts +
+        " — 가격·이벤트는 손님이 묻거나 글에 자연스러울 때만 언급하고, 광고처럼 매번 넣지 마라. "
+        "여기 없는 가격·할인·수치는 절대 지어내지 마라.\n"
+    )
+
+
 class PipelineError(RuntimeError):
     """파이프라인 단계 실패 시 발생."""
 
@@ -264,15 +285,14 @@ class ThreadsPipeline:
             + joined + "\n"
         )
 
-    def write_styled(self, topic: str, style_extra: str, examples: list[str]) -> str:
-        """리서치 없이, 계정 페르소나 문체 + 예시(few-shot)로 곧장 작성합니다.
-
-        말투가 강한 페르소나(강아지/사장님)에 사용 — 일반 리서치가 톤을 망치는 것 방지.
-        """
+    def write_styled(self, topic: str, style_extra: str, examples: list[str],
+                     facts: str = "") -> str:
+        """리서치 없이, 계정 페르소나 문체 + 예시(few-shot)로 곧장 작성합니다."""
         system = STYLE_GUIDE + (style_extra or "")
         user = (
             f"[이번에 쓸 주제] {topic}\n"
             + self._examples_block(examples)
+            + _facts_block(facts)
             + "\n위 문체 가이드의 '화자 시점·말투'를 반드시 지키고, 예시들의 '느낌'으로 "
             "이 주제에 맞는 새 게시글 한 편을 써라. 짧고 통통 튀게. 문장 복붙은 금지."
         )
@@ -280,7 +300,8 @@ class ThreadsPipeline:
         return text[:260].rstrip() if len(text) > 260 else text
 
     def write(self, topic: str, research: dict, facts: dict,
-              style_extra: str = "", examples: list[str] | None = None) -> str:
+              style_extra: str = "", examples: list[str] | None = None,
+              info: str = "") -> str:
         brief = [f"주제: {topic}"]
         if research.get("angle"):
             brief.append(f"차별화 각도: {research['angle']}")
@@ -303,7 +324,7 @@ class ThreadsPipeline:
             brief.append("이 글엔 검증된 사실 데이터가 없으니, 수치·단정적 주장은 쓰지 마라.")
 
         system = STYLE_GUIDE + (style_extra or "")
-        user = "\n".join(brief) + self._examples_block(examples or []) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게."
+        user = "\n".join(brief) + self._examples_block(examples or []) + _facts_block(info) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게."
         text = self._complete(system, user, max_tokens=800)
         if len(text) > 260:
             text = text[:260].rstrip()
@@ -316,7 +337,7 @@ class ThreadsPipeline:
     def write_from_images(self, images: list[tuple[bytes, str]],
                           is_video: bool = False, style_extra: str = "",
                           examples: list[str] | None = None,
-                          vision_mode: str = "subject") -> str:
+                          vision_mode: str = "subject", facts: str = "") -> str:
         """사진 여러 장(또는 영상 프레임들)을 보고 어울리는 스레드 글을 작성합니다.
 
         style_extra(계정 페르소나 문체) + 학습 예시(few-shot)를 적용합니다.
@@ -367,7 +388,7 @@ class ThreadsPipeline:
             base = accuracy + "설명문이 아니라 감정·장면이 담긴 글로 써라."
         base += " 반드시 200자 이내로 짧게."
 
-        content.append({"type": "text", "text": base + self._examples_block(examples or [])})
+        content.append({"type": "text", "text": base + self._examples_block(examples or []) + _facts_block(facts)})
 
         resp = self.client.messages.create(
             model=self.model,
@@ -380,9 +401,9 @@ class ThreadsPipeline:
         return text[:260] if len(text) > 260 else text
 
     def write_reply(self, style_extra: str, examples: list[str],
-                    post_text: str, comment_text: str) -> str:
+                    post_text: str, comment_text: str, facts: str = "") -> str:
         """내 게시글에 달린 댓글에 다는 짧은 답글을 작성합니다(계정 말투 적용)."""
-        system = STYLE_GUIDE + (style_extra or "") + (
+        system = STYLE_GUIDE + (style_extra or "") + _facts_block(facts) + (
             "\n\n[지금 상황: '내 게시글에 달린 댓글'에 다는 답글을 쓰는 중이다. "
             "댓글 '내용'을 바탕으로, 그에 어울리는 '내 이야기'로 반응해라. 짧게 1~2줄(30~60자). "
             "위 페르소나 규칙을 반드시 지켜라. "
@@ -421,9 +442,10 @@ class ThreadsPipeline:
         """
         style_extra = persona_style(persona)
         examples = examples or []
+        info = persona_facts(persona)  # 계정별 가격·이벤트 등 사실 정보
 
         if style_extra:
-            text = self.write_styled(topic, style_extra, examples)
+            text = self.write_styled(topic, style_extra, examples, facts=info)
             return {"text": text, "meta": {"angle": "", "sensitivity": "low",
                                            "sensitivity_note": "", "facts": []}}
 
@@ -431,7 +453,8 @@ class ThreadsPipeline:
         facts = {"verified_facts": [], "note": ""}
         if research.get("needs_facts"):
             facts = self.factcheck(topic, research.get("angle", ""))
-        text = self.write(topic, research, facts, style_extra=style_extra, examples=examples)
+        text = self.write(topic, research, facts, style_extra=style_extra,
+                          examples=examples, info=info)
         return {
             "text": text,
             "meta": {
