@@ -502,6 +502,45 @@ def api_post():
                     "summary": f"{success}/{len(results)} 계정 게시 성공"})
 
 
+@app.post("/api/reply_run")
+def api_reply_run():
+    """현재 계정의 최근 글에 달린 새 댓글에 그 계정 말투로 자동 답글을 답니다."""
+    try:
+        config.require_anthropic()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    acc = accounts.get_active()
+    if not acc:
+        return jsonify({"ok": False, "error": "연결된 계정이 없어요."}), 400
+
+    data = request.get_json(silent=True) or {}
+    max_replies = int(data.get("max", 20))
+
+    from threads_auto.pipeline import persona_style
+    from threads_auto import samples, replies as replies_mod
+    persona = acc.get("persona", "general")
+    style_extra = persona_style(persona)
+    examples = samples.get_samples(acc["id"], persona, limit=8)
+    pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+
+    def reply_fn(post_text, comment_text):
+        return pipe.write_reply(style_extra, examples, post_text, comment_text)
+
+    try:
+        results = replies_mod.run_for_account(acc, reply_fn, max_replies=max_replies)
+    except ThreadsError as exc:
+        msg = str(exc)
+        if "permission" in msg.lower() or "scope" in msg.lower() or "OAuth" in msg:
+            msg = ("답글 권한이 없어요. 토큰에 'threads_manage_replies' 권한을 추가하고 "
+                   "토큰을 다시 발급받아 계정을 등록하세요.")
+        return jsonify({"ok": False, "error": msg}), 502
+
+    success = sum(1 for r in results if r.get("ok"))
+    return jsonify({"ok": True, "results": results,
+                    "summary": f"{success}개 댓글에 답글을 달았어요." if success else "새로 답글 달 댓글이 없어요."})
+
+
 @app.get("/api/topics")
 def api_get_topics():
     content = TOPICS_PATH.read_text(encoding="utf-8") if TOPICS_PATH.exists() else ""

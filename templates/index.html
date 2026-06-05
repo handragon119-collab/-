@@ -213,6 +213,11 @@
         <button class="ghost" id="schedStopBtn">⏹ 끄기</button>
       </div>
       <p class="hint">⚠️ 이 앱(창)이 켜져 있는 동안만 자동 게시가 작동해요.</p>
+
+      <hr class="divider" />
+      <label>💬 댓글 자동 답글</label>
+      <button class="primary" id="replyBtn">지금 내 글 댓글에 답글 달기</button>
+      <p class="hint">현재 계정의 최근 글에 달린 <b>새 댓글</b>에 그 계정 말투로 답글을 달아요. (이미 답한 댓글은 건너뜀)<br>⚠️ 토큰에 <b>threads_manage_replies</b> 권한이 필요해요. 없으면 권한 추가 후 토큰 재발급.</p>
     </div>
   </div>
 
@@ -471,6 +476,16 @@ $("saveTopicsBtn").onclick = async () => { const r = await api("/api/topics", { 
 // 스케줄
 $("schedStartBtn").onclick = async () => { const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "start", cron: $("cronSelect").value }) }); if (r.ok) { toast("자동 켜짐", "ok"); loadStatus(); } else toast(r.error || "실패", "error"); };
 $("schedStopBtn").onclick = async () => { const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "stop" }) }); if (r.ok) { toast("자동 꺼짐", "ok"); loadStatus(); } };
+
+// 댓글 자동 답글
+$("replyBtn").onclick = async () => {
+  const b = $("replyBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>댓글 확인·답글 다는 중…';
+  try {
+    const r = await api("/api/reply_run", { method: "POST", body: JSON.stringify({ max: 20 }) });
+    toast(r.ok ? ("✅ " + r.summary) : (r.error || "실패"), r.ok ? "ok" : "error");
+  } catch (e) { toast("오류: " + e, "error"); }
+  b.disabled = false; b.textContent = "지금 내 글 댓글에 답글 달기";
+};
 
 // 기록
 async function loadHistory() {

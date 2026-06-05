@@ -377,6 +377,22 @@ class ThreadsPipeline:
         text = "".join(b.text for b in resp.content if b.type == "text").strip()
         return text[:260] if len(text) > 260 else text
 
+    def write_reply(self, style_extra: str, examples: list[str],
+                    post_text: str, comment_text: str) -> str:
+        """내 게시글에 달린 댓글에 다는 짧은 답글을 작성합니다(계정 말투 적용)."""
+        system = STYLE_GUIDE + (style_extra or "") + (
+            "\n\n[지금 상황: '내 게시글에 달린 댓글'에 다는 답글을 쓰는 중이다. "
+            "진짜 사람처럼 따뜻하고 짧게 1~2줄. 위 페르소나 말투 그대로. "
+            "댓글 내용에 자연스럽게 반응하고, 광고·복붙·과한 이모지 금지. 30~60자.]"
+        )
+        user = (
+            f"[내 게시글]\n{post_text[:300]}\n\n"
+            f"[누가 단 댓글]\n{comment_text[:300]}\n\n"
+            "이 댓글에 어울리는 답글 한 줄(길어도 두 줄)만 출력해."
+        )
+        text = self._complete(system, user, max_tokens=200)
+        return text[:120] if len(text) > 120 else text
+
     def image_prompt(self, post_text: str) -> str:
         """프리미엄 브랜드 감성의 이미지 생성 프롬프트(영어)를 만듭니다."""
         system = (

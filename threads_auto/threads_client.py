@@ -46,6 +46,37 @@ class ThreadsClient:
             raise ThreadsError(f"프로필 조회 실패 {resp.status_code}: {resp.text}")
         return resp.json()
 
+    def _get(self, path: str, params: dict) -> dict:
+        params = {**params, "access_token": self.access_token}
+        resp = requests.get(f"{GRAPH_BASE}/{path}", params=params, timeout=self.timeout)
+        if resp.status_code >= 400:
+            raise ThreadsError(f"Threads API 오류 {resp.status_code}: {resp.text}")
+        return resp.json()
+
+    def get_my_posts(self, limit: int = 10) -> list[dict]:
+        """내 최근 게시물 목록."""
+        data = self._get(f"{self.user_id}/threads",
+                         {"fields": "id,text,timestamp", "limit": limit})
+        return data.get("data", [])
+
+    def get_replies(self, media_id: str) -> list[dict]:
+        """특정 게시물에 달린 답글(댓글) 목록."""
+        data = self._get(f"{media_id}/replies",
+                         {"fields": "id,text,username,timestamp"})
+        return data.get("data", [])
+
+    def post_reply(self, text: str, reply_to_id: str, wait_seconds: int = 3) -> str:
+        """특정 댓글/게시물에 답글을 답니다. 게시물 ID 반환."""
+        data = self._post(
+            f"{self.user_id}/threads",
+            {"media_type": "TEXT", "text": text, "reply_to_id": reply_to_id},
+        )
+        creation_id = data.get("id")
+        if not creation_id:
+            raise ThreadsError(f"답글 컨테이너 생성 실패: {data}")
+        time.sleep(wait_seconds)
+        return self.publish(creation_id)
+
     def create_text_container(self, text: str) -> str:
         """텍스트 글 컨테이너를 만들고 creation_id를 반환합니다."""
         data = self._post(
