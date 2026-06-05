@@ -53,17 +53,43 @@ class ThreadsClient:
             raise ThreadsError(f"Threads API 오류 {resp.status_code}: {resp.text}")
         return resp.json()
 
-    def get_my_posts(self, limit: int = 10) -> list[dict]:
-        """내 최근 게시물 목록."""
+    def get_my_posts(self, limit: int = 25) -> list[dict]:
+        """내 최근 게시물 목록(페이지 넘기며 모음)."""
+        out: list[dict] = []
         data = self._get(f"{self.user_id}/threads",
-                         {"fields": "id,text,timestamp", "limit": limit})
-        return data.get("data", [])
+                         {"fields": "id,text,timestamp", "limit": 50})
+        out += data.get("data", [])
+        nxt = (data.get("paging") or {}).get("next")
+        pages = 1
+        while nxt and len(out) < limit and pages < 6:
+            try:
+                resp = requests.get(nxt, timeout=self.timeout)
+                j = resp.json()
+            except Exception:  # noqa: BLE001
+                break
+            out += j.get("data", [])
+            nxt = (j.get("paging") or {}).get("next")
+            pages += 1
+        return out[:limit] if limit else out
 
-    def get_replies(self, media_id: str) -> list[dict]:
-        """특정 게시물에 달린 답글(댓글) 목록."""
+    def get_replies(self, media_id: str, max_pages: int = 12) -> list[dict]:
+        """특정 게시물에 달린 답글(댓글) 전부 — 페이지를 넘기며 모읍니다."""
+        out: list[dict] = []
         data = self._get(f"{media_id}/replies",
-                         {"fields": "id,text,username,timestamp"})
-        return data.get("data", [])
+                         {"fields": "id,text,username,timestamp", "limit": 100})
+        out += data.get("data", [])
+        nxt = (data.get("paging") or {}).get("next")
+        pages = 1
+        while nxt and pages < max_pages:
+            try:
+                resp = requests.get(nxt, timeout=self.timeout)
+                j = resp.json()
+            except Exception:  # noqa: BLE001
+                break
+            out += j.get("data", [])
+            nxt = (j.get("paging") or {}).get("next")
+            pages += 1
+        return out
 
     def like(self, media_id: str) -> None:
         """댓글/게시물에 좋아요. (Threads 공식 API가 아직 미지원 → 시도만, 실패 시 예외)"""

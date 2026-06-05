@@ -490,23 +490,35 @@ $("schedStopBtn").onclick = async () => { const r = await api("/api/schedule", {
 
 // 댓글 자동 답글 + 실시간 보고서
 const esc = (s) => (s || "").replace(/</g, "&lt;");
-let replyPoll = null;
-function renderReport(items, running, summary) {
+let replyPoll = null, REPLY_ITEMS = [], REPLY_RUNNING = false, REPLY_SUMMARY = "";
+function agoKo(ms) {
+  if (!ms) return "";
+  let s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return "방금 전";
+  const m = Math.floor(s / 60); if (m < 60) return m + "분 전";
+  const h = Math.floor(m / 60); if (h < 24) return h + "시간 전";
+  return Math.floor(h / 24) + "일 전";
+}
+function renderReport() {
+  const items = REPLY_ITEMS, running = REPLY_RUNNING, summary = REPLY_SUMMARY;
   const head = `<p class="lbl" style="margin:4px 0 8px">📋 답글 보고서${running ? ' · 진행 중…' : ''} (${items.filter(i=>i.ok).length}개)</p>`;
   if (!items.length) { $("replyReport").innerHTML = head + '<p class="hint">' + (running ? "댓글 확인 중…" : (summary || "답글 단 댓글이 없어요.")) + '</p>'; return; }
   $("replyReport").innerHTML = head + items.map((it) => {
     if (!it.ok) return `<div class="rep fail"><div class="lbl">실패</div><div class="cmt">${esc(it.error)}</div></div>`;
     return `<div class="rep">
       <div class="who">@${esc(it.to) || "익명"}</div>
-      <div class="lbl">상대 댓글</div><div class="cmt">${esc(it.comment)}</div>
-      <div class="lbl">내가 단 답글</div><div class="mine">${esc(it.reply)}</div>
+      <div class="lbl">상대 댓글 · ${agoKo(it.comment_epoch)}</div><div class="cmt">${esc(it.comment)}</div>
+      <div class="lbl">내가 단 답글 · ${agoKo(it.reply_epoch)}</div><div class="mine">${esc(it.reply)}</div>
     </div>`;
   }).join("");
 }
+// 시간 표시(분 전)가 흐름에 따라 갱신되도록 주기적으로 다시 그림
+setInterval(() => { if (REPLY_ITEMS.length) renderReport(); }, 20000);
 async function pollReply() {
   try {
     const s = await api("/api/reply_status");
-    renderReport(s.results || [], s.running, s.summary);
+    REPLY_ITEMS = s.results || []; REPLY_RUNNING = s.running; REPLY_SUMMARY = s.summary;
+    renderReport();
     if (!s.running) {
       clearInterval(replyPoll); replyPoll = null;
       $("replyBtn").disabled = false; $("replyBtn").textContent = "지금 내 글 댓글에 답글 달기";

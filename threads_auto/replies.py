@@ -11,9 +11,22 @@ from __future__ import annotations
 import json
 import random
 import time
+from datetime import datetime
 from pathlib import Path
 
 HANDLED_PATH = Path("data/replied_ids.json")
+
+
+def _to_epoch_ms(ts: str | None) -> int | None:
+    """Threads 타임스탬프(ISO) → epoch ms."""
+    if not ts:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z"):
+        try:
+            return int(datetime.strptime(ts, fmt).timestamp() * 1000)
+        except ValueError:
+            continue
+    return None
 
 
 def _load_handled() -> set:
@@ -102,7 +115,9 @@ def run_for_account(account: dict, reply_fn, max_replies: int = 0,
 
                 client.post_reply(reply_text, rid)
                 item = {"ok": True, "to": r.get("username", ""),
-                        "comment": ctext, "reply": reply_text}
+                        "comment": ctext, "reply": reply_text,
+                        "comment_epoch": _to_epoch_ms(r.get("timestamp")),
+                        "reply_epoch": int(time.time() * 1000)}
                 results.append(item)
                 handled.add(rid)
                 done += 1
