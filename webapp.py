@@ -528,7 +528,11 @@ def api_reply_run():
         return pipe.write_reply(style_extra, examples, post_text, comment_text)
 
     try:
-        results = replies_mod.run_for_account(acc, reply_fn, max_replies=max_replies)
+        results = replies_mod.run_for_account(
+            acc, reply_fn, max_replies=max_replies,
+            like_comments=bool(data.get("like", False)),
+            human_typing=True,  # 사람처럼 시간차를 두고 답글
+        )
     except ThreadsError as exc:
         msg = str(exc)
         if "permission" in msg.lower() or "scope" in msg.lower() or "OAuth" in msg:

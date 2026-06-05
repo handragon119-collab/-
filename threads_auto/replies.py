@@ -9,6 +9,7 @@ threads_manage_replies 권한이 있는 토큰이 필요합니다.
 from __future__ import annotations
 
 import json
+import random
 import time
 from pathlib import Path
 
@@ -29,11 +30,25 @@ def _save_handled(s: set) -> None:
     HANDLED_PATH.write_text(json.dumps(sorted(s), ensure_ascii=False), encoding="utf-8")
 
 
+def _human_typing_delay(text: str) -> float:
+    """사람이 댓글을 읽고 → 생각하고 → 타이핑하는 데 걸릴 법한 시간(초)."""
+    read = random.uniform(2.0, 5.0)                 # 댓글 읽고 잠깐 생각
+    typing = len(text) * random.uniform(0.12, 0.28)  # 글자당 타이핑 속도
+    pauses = random.uniform(0.0, 4.0)               # 중간에 멈칫
+    # 가끔(20%) 다른 일 하다 오는 것처럼 더 길게
+    if random.random() < 0.2:
+        pauses += random.uniform(8.0, 25.0)
+    return read + typing + pauses
+
+
 def run_for_account(account: dict, reply_fn, max_replies: int = 20,
-                    posts_limit: int = 10) -> list[dict]:
+                    posts_limit: int = 10, like_comments: bool = False,
+                    human_typing: bool = True) -> list[dict]:
     """한 계정의 최근 글에 달린 새 댓글에 답글을 답니다.
 
     reply_fn(post_text, comment_text) -> 답글 텍스트
+    like_comments: (가능하면) 댓글에 좋아요 시도 — 공식 API 미지원 시 조용히 패스.
+    human_typing: 사람처럼 답글 사이 랜덤 딜레이를 둬서 밴/제한을 피함.
     """
     from threads_auto.threads_client import ThreadsClient
 
@@ -58,20 +73,33 @@ def run_for_account(account: dict, reply_fn, max_replies: int = 20,
             if not rid or rid in handled:
                 continue
             if my_username and r.get("username", "") == my_username:
-                handled.add(rid)  # 내 답글은 건너뜀
+                handled.add(rid)  # 내 댓글/답글은 건너뜀
                 continue
             ctext = (r.get("text") or "").strip()
             if not ctext:
                 handled.add(rid)
                 continue
             try:
+                # (선택) 댓글 좋아요 시도 — 미지원/실패해도 답글은 진행
+                if like_comments:
+                    try:
+                        client.like(rid)
+                    except Exception:  # noqa: BLE001
+                        pass
+
                 reply_text = reply_fn(p.get("text", ""), ctext)
+
+                # 사람처럼: 읽고→타이핑하는 시간만큼 자연스럽게 대기
+                if human_typing:
+                    time.sleep(_human_typing_delay(reply_text))
+                else:
+                    time.sleep(2)
+
                 client.post_reply(reply_text, rid)
                 results.append({"ok": True, "to": r.get("username", ""),
                                 "comment": ctext, "reply": reply_text})
                 handled.add(rid)
                 done += 1
-                time.sleep(2)  # 봇 패턴 회피
             except Exception as exc:  # noqa: BLE001
                 results.append({"ok": False, "error": str(exc)})
 

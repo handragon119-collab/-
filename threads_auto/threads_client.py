@@ -65,6 +65,11 @@ class ThreadsClient:
                          {"fields": "id,text,username,timestamp"})
         return data.get("data", [])
 
+    def like(self, media_id: str) -> None:
+        """댓글/게시물에 좋아요. (Threads 공식 API가 아직 미지원 → 시도만, 실패 시 예외)"""
+        # Threads Graph API에는 공개 like 엔드포인트가 없음. 추후 추가될 경우를 대비한 시도.
+        self._post(f"{media_id}/likes", {})
+
     def post_reply(self, text: str, reply_to_id: str, wait_seconds: int = 3) -> str:
         """특정 댓글/게시물에 답글을 답니다. 게시물 ID 반환."""
         data = self._post(
