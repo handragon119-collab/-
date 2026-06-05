@@ -55,7 +55,7 @@ def _human_typing_delay(text: str) -> float:
 
 
 def run_for_account(account: dict, reply_fn, max_replies: int = 0,
-                    posts_limit: int = 25, like_comments: bool = False,
+                    posts_limit: int = 200, like_comments: bool = False,
                     human_typing: bool = True, on_result=None,
                     should_stop=None) -> list[dict]:
     """한 계정의 최근 글에 달린 새 댓글에 답글을 답니다.
@@ -99,6 +99,16 @@ def run_for_account(account: dict, reply_fn, max_replies: int = 0,
             if not ctext:
                 handled.add(rid)
                 continue
+
+            # 이미 내가(앱이든 수동이든) 이 댓글에 답글을 달았는지 실제로 확인
+            try:
+                subs = client.get_replies(rid)
+                if my_username and any(s.get("username", "") == my_username for s in subs):
+                    handled.add(rid)
+                    continue
+            except Exception:  # noqa: BLE001 (확인 실패 시 그냥 진행)
+                pass
+
             try:
                 if like_comments:
                     try:
