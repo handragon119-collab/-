@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -502,20 +503,25 @@ def api_post():
                     "summary": f"{success}/{len(results)} 계정 게시 성공"})
 
 
+# 답글 작업 상태(백그라운드 실행 + 실시간 보고서)
+_reply_job = {"running": False, "results": [], "summary": "", "stop": False}
+
+
 @app.post("/api/reply_run")
 def api_reply_run():
-    """현재 계정의 최근 글에 달린 새 댓글에 그 계정 말투로 자동 답글을 답니다."""
+    """현재 계정의 새 댓글에 자동 답글을 백그라운드로 답니다(수량 제한 없음, 사람처럼)."""
+    if _reply_job["running"]:
+        return jsonify({"ok": True, "running": True, "already": True})
     try:
         config.require_anthropic()
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-
     acc = accounts.get_active()
     if not acc:
         return jsonify({"ok": False, "error": "연결된 계정이 없어요."}), 400
 
     data = request.get_json(silent=True) or {}
-    max_replies = int(data.get("max", 20))
+    max_replies = int(data.get("max", 0))  # 0 = 수량 제한 없음
 
     from threads_auto.pipeline import persona_style
     from threads_auto import samples, replies as replies_mod
@@ -527,22 +533,43 @@ def api_reply_run():
     def reply_fn(post_text, comment_text):
         return pipe.write_reply(style_extra, examples, post_text, comment_text)
 
-    try:
-        results = replies_mod.run_for_account(
-            acc, reply_fn, max_replies=max_replies,
-            like_comments=bool(data.get("like", False)),
-            human_typing=True,  # 사람처럼 시간차를 두고 답글
-        )
-    except ThreadsError as exc:
-        msg = str(exc)
-        if "permission" in msg.lower() or "scope" in msg.lower() or "OAuth" in msg:
-            msg = ("답글 권한이 없어요. 토큰에 'threads_manage_replies' 권한을 추가하고 "
-                   "토큰을 다시 발급받아 계정을 등록하세요.")
-        return jsonify({"ok": False, "error": msg}), 502
+    _reply_job.update(running=True, results=[], summary="진행 중…", stop=False)
 
-    success = sum(1 for r in results if r.get("ok"))
-    return jsonify({"ok": True, "results": results,
-                    "summary": f"{success}개 댓글에 답글을 달았어요." if success else "새로 답글 달 댓글이 없어요."})
+    def work():
+        try:
+            replies_mod.run_for_account(
+                acc, reply_fn, max_replies=max_replies,
+                like_comments=bool(data.get("like", False)), human_typing=True,
+                on_result=lambda it: _reply_job["results"].append(it),
+                should_stop=lambda: _reply_job["stop"],
+            )
+            s = sum(1 for r in _reply_job["results"] if r.get("ok"))
+            _reply_job["summary"] = (f"{s}개 댓글에 답글을 달았어요." if s else "새로 답글 달 댓글이 없어요.")
+        except ThreadsError as exc:
+            msg = str(exc)
+            if "permission" in msg.lower() or "scope" in msg.lower() or "OAuth" in msg:
+                msg = ("답글 권한이 없어요. 토큰에 'threads_manage_replies' 권한을 추가하고 "
+                       "토큰을 다시 발급받아 계정을 등록하세요.")
+            _reply_job["summary"] = "오류: " + msg
+        except Exception as exc:  # noqa: BLE001
+            _reply_job["summary"] = "오류: " + str(exc)
+        finally:
+            _reply_job["running"] = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"ok": True, "running": True})
+
+
+@app.get("/api/reply_status")
+def api_reply_status():
+    return jsonify({"ok": True, "running": _reply_job["running"],
+                    "results": _reply_job["results"], "summary": _reply_job["summary"]})
+
+
+@app.post("/api/reply_stop")
+def api_reply_stop():
+    _reply_job["stop"] = True
+    return jsonify({"ok": True})
 
 
 @app.get("/api/topics")

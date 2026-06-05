@@ -223,8 +223,11 @@
 
       <hr class="divider" />
       <label>💬 댓글 자동 답글</label>
-      <button class="primary" id="replyBtn">지금 내 글 댓글에 답글 달기</button>
-      <p class="hint">현재 계정의 최근 글에 달린 <b>새 댓글</b>에 그 계정 말투로 답글을 달아요. (이미 답한 댓글은 건너뜀)<br>🧑‍💻 사람처럼 댓글마다 <b>읽고·타이핑하는 시간차</b>를 자동으로 둬서 밴/제한을 피해요(한 번에 여러 개면 몇 분 걸릴 수 있어요).<br>⚠️ 토큰에 <b>threads_manage_replies</b> 권한 필요. · 좋아요 누르기는 Threads 공식 API가 미지원이라 답글로 대체돼요.</p>
+      <div class="row">
+        <button class="primary" id="replyBtn">지금 내 글 댓글에 답글 달기</button>
+        <button class="ghost" id="replyStopBtn" style="display:none">⏹ 멈추기</button>
+      </div>
+      <p class="hint">현재 계정의 새 댓글에 그 계정 말투로 <b>전부</b> 답글을 달아요(수량 제한 없음, 이미 답한 건 건너뜀).<br>🧑‍💻 사람처럼 댓글마다 <b>읽고·타이핑하는 시간차</b>를 둬서 천천히 진행해요. 백그라운드로 돌고 <b>보고서가 실시간</b>으로 채워져요(창은 켜둬야 해요).<br>⚠️ 토큰에 <b>threads_manage_replies</b> 권한 필요. · 좋아요는 Threads 공식 API 미지원이라 답글로 대체돼요.</p>
       <div id="replyReport" style="margin-top:12px"></div>
     </div>
   </div>
@@ -485,34 +488,46 @@ $("saveTopicsBtn").onclick = async () => { const r = await api("/api/topics", { 
 $("schedStartBtn").onclick = async () => { const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "start", cron: $("cronSelect").value }) }); if (r.ok) { toast("자동 켜짐", "ok"); loadStatus(); } else toast(r.error || "실패", "error"); };
 $("schedStopBtn").onclick = async () => { const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ action: "stop" }) }); if (r.ok) { toast("자동 꺼짐", "ok"); loadStatus(); } };
 
-// 댓글 자동 답글 + 보고서
+// 댓글 자동 답글 + 실시간 보고서
 const esc = (s) => (s || "").replace(/</g, "&lt;");
-$("replyBtn").onclick = async () => {
-  const b = $("replyBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>댓글 확인·답글 다는 중… (몇 분 걸릴 수 있어요)';
-  $("replyReport").innerHTML = '';
+let replyPoll = null;
+function renderReport(items, running, summary) {
+  const head = `<p class="lbl" style="margin:4px 0 8px">📋 답글 보고서${running ? ' · 진행 중…' : ''} (${items.filter(i=>i.ok).length}개)</p>`;
+  if (!items.length) { $("replyReport").innerHTML = head + '<p class="hint">' + (running ? "댓글 확인 중…" : (summary || "답글 단 댓글이 없어요.")) + '</p>'; return; }
+  $("replyReport").innerHTML = head + items.map((it) => {
+    if (!it.ok) return `<div class="rep fail"><div class="lbl">실패</div><div class="cmt">${esc(it.error)}</div></div>`;
+    return `<div class="rep">
+      <div class="who">@${esc(it.to) || "익명"}</div>
+      <div class="lbl">상대 댓글</div><div class="cmt">${esc(it.comment)}</div>
+      <div class="lbl">내가 단 답글</div><div class="mine">${esc(it.reply)}</div>
+    </div>`;
+  }).join("");
+}
+async function pollReply() {
   try {
-    const r = await api("/api/reply_run", { method: "POST", body: JSON.stringify({ max: 20 }) });
-    toast(r.ok ? ("✅ " + r.summary) : (r.error || "실패"), r.ok ? "ok" : "error");
-    const items = (r.results || []);
-    if (!items.length) {
-      $("replyReport").innerHTML = '<p class="hint">' + (r.summary || "답글 단 댓글이 없어요.") + '</p>';
-    } else {
-      $("replyReport").innerHTML =
-        '<p class="lbl" style="margin:4px 0 8px">📋 답글 보고서</p>' +
-        items.map((it) => {
-          if (!it.ok) return `<div class="rep fail"><div class="lbl">실패</div><div class="cmt">${esc(it.error)}</div></div>`;
-          return `<div class="rep">
-            <div class="who">@${esc(it.to) || "익명"}</div>
-            <div class="lbl">상대 댓글</div>
-            <div class="cmt">${esc(it.comment)}</div>
-            <div class="lbl">내가 단 답글</div>
-            <div class="mine">${esc(it.reply)}</div>
-          </div>`;
-        }).join("");
+    const s = await api("/api/reply_status");
+    renderReport(s.results || [], s.running, s.summary);
+    if (!s.running) {
+      clearInterval(replyPoll); replyPoll = null;
+      $("replyBtn").disabled = false; $("replyBtn").textContent = "지금 내 글 댓글에 답글 달기";
+      $("replyStopBtn").style.display = "none";
+      toast("✅ " + (s.summary || "완료"), s.summary && s.summary.startsWith("오류") ? "error" : "ok");
     }
-  } catch (e) { toast("오류: " + e, "error"); }
-  b.disabled = false; b.textContent = "지금 내 글 댓글에 답글 달기";
+  } catch (e) {}
+}
+$("replyBtn").onclick = async () => {
+  $("replyBtn").disabled = true; $("replyBtn").innerHTML = '<span class="spin"></span>진행 중…';
+  $("replyStopBtn").style.display = "block";
+  $("replyReport").innerHTML = '<p class="hint">시작하는 중…</p>';
+  try {
+    const r = await api("/api/reply_run", { method: "POST", body: JSON.stringify({ max: 0 }) });
+    if (!r.ok) { toast(r.error || "실패", "error"); $("replyBtn").disabled = false; $("replyBtn").textContent = "지금 내 글 댓글에 답글 달기"; $("replyStopBtn").style.display = "none"; return; }
+    if (replyPoll) clearInterval(replyPoll);
+    replyPoll = setInterval(pollReply, 3000);
+    pollReply();
+  } catch (e) { toast("오류: " + e, "error"); $("replyBtn").disabled = false; $("replyBtn").textContent = "지금 내 글 댓글에 답글 달기"; }
 };
+$("replyStopBtn").onclick = async () => { await api("/api/reply_stop", { method: "POST" }); toast("곧 멈춰요…"); };
 
 // 기록
 async function loadHistory() {

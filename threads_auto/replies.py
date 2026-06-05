@@ -41,14 +41,16 @@ def _human_typing_delay(text: str) -> float:
     return read + typing + pauses
 
 
-def run_for_account(account: dict, reply_fn, max_replies: int = 20,
-                    posts_limit: int = 10, like_comments: bool = False,
-                    human_typing: bool = True) -> list[dict]:
+def run_for_account(account: dict, reply_fn, max_replies: int = 0,
+                    posts_limit: int = 25, like_comments: bool = False,
+                    human_typing: bool = True, on_result=None,
+                    should_stop=None) -> list[dict]:
     """한 계정의 최근 글에 달린 새 댓글에 답글을 답니다.
 
     reply_fn(post_text, comment_text) -> 답글 텍스트
-    like_comments: (가능하면) 댓글에 좋아요 시도 — 공식 API 미지원 시 조용히 패스.
-    human_typing: 사람처럼 답글 사이 랜덤 딜레이를 둬서 밴/제한을 피함.
+    max_replies: 0이면 '수량 제한 없이' 새 댓글 전부 (천천히, 사람처럼).
+    on_result(result): 답글 하나 끝날 때마다 호출(실시간 보고서용).
+    should_stop(): True 반환 시 중간에 멈춤.
     """
     from threads_auto.threads_client import ThreadsClient
 
@@ -57,30 +59,34 @@ def run_for_account(account: dict, reply_fn, max_replies: int = 20,
     handled = _load_handled()
     results: list[dict] = []
     done = 0
+    unlimited = not max_replies or max_replies <= 0
 
     posts = client.get_my_posts(posts_limit)
     for p in posts:
-        if done >= max_replies:
+        if not unlimited and done >= max_replies:
+            break
+        if should_stop and should_stop():
             break
         try:
             replies = client.get_replies(p["id"])
-        except Exception:  # noqa: BLE001 (개별 글 실패는 건너뜀)
+        except Exception:  # noqa: BLE001
             continue
         for r in replies:
-            if done >= max_replies:
+            if not unlimited and done >= max_replies:
+                break
+            if should_stop and should_stop():
                 break
             rid = r.get("id")
             if not rid or rid in handled:
                 continue
             if my_username and r.get("username", "") == my_username:
-                handled.add(rid)  # 내 댓글/답글은 건너뜀
+                handled.add(rid)
                 continue
             ctext = (r.get("text") or "").strip()
             if not ctext:
                 handled.add(rid)
                 continue
             try:
-                # (선택) 댓글 좋아요 시도 — 미지원/실패해도 답글은 진행
                 if like_comments:
                     try:
                         client.like(rid)
@@ -89,19 +95,25 @@ def run_for_account(account: dict, reply_fn, max_replies: int = 20,
 
                 reply_text = reply_fn(p.get("text", ""), ctext)
 
-                # 사람처럼: 읽고→타이핑하는 시간만큼 자연스럽게 대기
                 if human_typing:
                     time.sleep(_human_typing_delay(reply_text))
                 else:
                     time.sleep(2)
 
                 client.post_reply(reply_text, rid)
-                results.append({"ok": True, "to": r.get("username", ""),
-                                "comment": ctext, "reply": reply_text})
+                item = {"ok": True, "to": r.get("username", ""),
+                        "comment": ctext, "reply": reply_text}
+                results.append(item)
                 handled.add(rid)
                 done += 1
+                _save_handled(handled)  # 중간에 멈춰도 진행분 저장
+                if on_result:
+                    on_result(item)
             except Exception as exc:  # noqa: BLE001
-                results.append({"ok": False, "error": str(exc)})
+                item = {"ok": False, "error": str(exc)}
+                results.append(item)
+                if on_result:
+                    on_result(item)
 
     _save_handled(handled)
     return results
