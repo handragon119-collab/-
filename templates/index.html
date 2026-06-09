@@ -170,6 +170,10 @@
       <label>생성된 글 (수정 가능)</label>
       <textarea id="postText" placeholder="여기에 글이 나와요. 직접 써도 됩니다."></textarea>
       <div class="count"><span id="charCount">0</span> / 500자</div>
+      <div id="learnRow" style="display:none;margin-top:6px">
+        <button class="ghost" id="learnEditBtn" style="width:auto;padding:8px 14px">🧠 수정한 대로 학습</button>
+        <p class="hint" style="margin:6px 0 0">AI가 쓴 글을 위에서 고친 뒤 누르면, <b>원본과 비교해</b> 고친 방향(말투·길이·표현)을 이 계정 말투에 학습해요. 다음 글부터 반영돼요.</p>
+      </div>
 
       <div id="mediaWrap" style="display:none">
         <video id="videoPrev" controls style="display:none"></video>
@@ -307,6 +311,7 @@ async function api(path, opts) {
 }
 
 // 미디어 상태
+let LAST_GEN = null;      // 방금 AI가 생성한 원본 글(수정 학습 비교용)
 let CUR_IMAGES = [];      // 게시용 공개 URL 배열
 let CUR_VIDEO = null;     // 게시용 공개 URL
 let CUR_PREVIEWS = [];    // 미리보기용(로컬) URL 배열
@@ -366,6 +371,29 @@ async function loadStatus() {
 }
 
 $("postText").addEventListener("input", () => { $("charCount").textContent = $("postText").value.length; });
+
+// AI가 생성한 글을 칸에 넣을 때 호출 → 원본 기억 + '수정 학습' 버튼 노출
+function setGenerated(text) {
+  $("postText").value = text;
+  $("charCount").textContent = text.length;
+  LAST_GEN = text;
+  $("learnRow").style.display = text ? "block" : "none";
+}
+
+// 수정한 대로 학습: AI 원본(LAST_GEN)과 지금 글(고친 글)을 비교해 학습
+$("learnEditBtn").onclick = async () => {
+  const edited = $("postText").value.trim();
+  if (!LAST_GEN) return toast("먼저 AI로 글을 생성해 주세요.", "error");
+  if (!edited) return toast("글이 비어 있어요.", "error");
+  if (edited === LAST_GEN.trim()) return toast("고친 내용이 없어요. 위에서 글을 수정한 뒤 눌러주세요.", "error");
+  const b = $("learnEditBtn"); b.disabled = true;
+  try {
+    const r = await api("/api/learn_edit", { method: "POST", body: JSON.stringify({ original: LAST_GEN, edited }) });
+    if (r.ok) { toast("학습했어요 👍 다음 글부터 이 방향이 반영돼요.", "ok"); LAST_GEN = edited; }
+    else toast(r.error || "학습하지 못했어요.", "error");
+  } catch (e) { toast("오류: " + e, "error"); }
+  b.disabled = false;
+};
 
 // 카테고리
 let SEL_CAT = "";
@@ -500,7 +528,7 @@ $("fileInput").onchange = async (e) => {
       CUR_IMAGES = j.image_urls || []; CUR_VIDEO = j.video_url || null;
       CUR_PREVIEWS = j.preview_urls || []; CUR_VIDEO_PREVIEW = j.video_preview || null;
       renderMedia();
-      if (j.text) { $("postText").value = j.text; $("charCount").textContent = j.text.length; }
+      if (j.text) { setGenerated(j.text); }
       if (j.text_error) toast("미디어는 올렸지만 글 작성 실패: " + j.text_error, "error");
       else toast(writing ? "미디어 보고 글까지 썼어요!" : "미디어를 올렸어요.", "ok");
       $("mediaWrap").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -515,7 +543,7 @@ $("autoBtn").onclick = async () => {
   try {
     const r = await api("/api/auto", { method: "POST", body: JSON.stringify({ category: SEL_CAT, topic: $("topicInput").value, with_image: true }) });
     if (r.ok) {
-      $("postText").value = r.text; $("charCount").textContent = r.text.length;
+      setGenerated(r.text);
       if (r.topic) $("topicInput").value = r.topic;
       if (r.preview_url || r.image_url) {
         CUR_PREVIEWS = [r.preview_url || r.image_url];
@@ -537,7 +565,7 @@ $("genBtn").onclick = async () => {
   const b = $("genBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>리서치·작성 중… (30~60초)';
   try {
     const r = await api("/api/generate", { method: "POST", body: JSON.stringify({ topic: $("topicInput").value, category: SEL_CAT }) });
-    if (r.ok) { $("postText").value = r.text; $("charCount").textContent = r.text.length; if (r.topic) $("topicInput").value = r.topic; toast("글 생성 완료", "ok"); }
+    if (r.ok) { setGenerated(r.text); if (r.topic) $("topicInput").value = r.topic; toast("글 생성 완료", "ok"); }
     else toast(r.error || "실패", "error");
   } catch (e) { toast("오류: " + e, "error"); }
   b.disabled = false; b.textContent = "✨ 글만 생성";
@@ -649,17 +677,45 @@ async function loadScheduled() {
     box.innerHTML = r.items.map((it) => {
       const badge = SCHED_BADGE[it.status] || it.status;
       const res = (it.status !== "pending" && it.result && it.result.summary) ? ` <span class="hint" style="margin:0">· ${esc(it.result.summary)}</span>` : "";
-      return `<div class="item">
+      const editBtn = it.status === "pending"
+        ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-editsched="${it.id}">✏️ 수정</button> ` : "";
+      return `<div class="item" data-itemid="${it.id}">
         <div class="item-time">${fmtWhen(it.run_at)} · ${esc(it.accounts.join(", "))} ${it.has_media ? "· 🖼" : ""} ${badge}${res}</div>
-        <div class="item-text">${esc(it.text)}</div>
-        <button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
+        <div class="item-text" data-itemtext="${it.id}">${esc(it.text)}</div>
+        ${editBtn}<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
       </div>`;
     }).join("");
     box.querySelectorAll("[data-delsched]").forEach((el) => el.onclick = async () => {
       await api("/api/scheduled/delete", { method: "POST", body: JSON.stringify({ id: el.dataset.delsched }) });
       toast("삭제됨", "ok"); loadScheduled();
     });
+    box.querySelectorAll("[data-editsched]").forEach((el) => el.onclick = () => beginSchedEdit(el.dataset.editsched));
   } catch (e) { box.innerHTML = '<p class="hint">목록을 불러오지 못했어요.</p>'; }
+}
+
+// 예약 글 인라인 수정: 본문을 textarea로 바꾸고 저장 시 /api/scheduled/edit (비교 학습)
+function beginSchedEdit(id) {
+  const wrap = document.querySelector(`.item[data-itemid="${id}"]`);
+  const textDiv = document.querySelector(`[data-itemtext="${id}"]`);
+  if (!wrap || !textDiv || wrap.querySelector("textarea")) return;
+  const cur = textDiv.textContent;
+  const ta = document.createElement("textarea");
+  ta.value = cur; ta.style.minHeight = "120px"; ta.style.marginTop = "8px";
+  const bar = document.createElement("div");
+  bar.style.marginTop = "8px";
+  bar.innerHTML = `<button class="primary" style="width:auto;padding:6px 14px">💾 저장 + 학습</button>
+                   <button class="ghost" style="width:auto;padding:6px 14px;margin-left:6px">취소</button>`;
+  textDiv.style.display = "none";
+  textDiv.after(bar); bar.before(ta);
+  bar.children[1].onclick = () => loadScheduled();
+  bar.children[0].onclick = async () => {
+    const text = ta.value.trim();
+    if (!text) return toast("글이 비어 있어요.", "error");
+    const r = await api("/api/scheduled/edit", { method: "POST", body: JSON.stringify({ id, text }) });
+    if (r.ok) toast(r.learned ? "수정 저장 + 학습 완료 👍" : "수정 저장 완료", "ok");
+    else toast(r.error || "수정 실패", "error");
+    loadScheduled();
+  };
 }
 
 // 주제

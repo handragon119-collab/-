@@ -92,3 +92,57 @@ def add_sample(account_id: str | None, text: str) -> None:
     d[account_id] = arr[-300:]
     _save(d)
 
+
+# ── 수정(교정) 학습 ──────────────────────────────────────────────
+# 사용자가 AI가 쓴 글을 손으로 고치면 (before, after) 쌍을 저장해 둔다.
+# 다음 생성 때 "AI는 before처럼 썼는데 사용자가 after로 고쳤다 → 이 방향을
+# 따라라"는 교정 사례로 프롬프트에 주입한다.
+EDITS_PATH = Path("data/edit_lessons.json")
+
+
+def _load_edits() -> dict:
+    if EDITS_PATH.exists():
+        try:
+            return json.loads(EDITS_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _save_edits(d: dict) -> None:
+    EDITS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    EDITS_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def add_edit(account_id: str | None, before: str, after: str) -> bool:
+    """AI 원본(before)과 사용자가 고친 글(after)의 차이를 학습합니다.
+
+    - before/after가 사실상 같거나 너무 짧으면 무시(False).
+    - 저장에 성공하면 고친 글(after)을 긍정 예시로도 함께 등록하고 True 반환.
+    """
+    before = (before or "").strip()
+    after = (after or "").strip()
+    if not account_id or len(after) < 8:
+        return False
+    if before == after:  # 안 고쳤으면 배울 게 없음
+        return False
+    import time
+    d = _load_edits()
+    arr = d.get(account_id, [])
+    # 같은 교정이 이미 있으면 중복 저장 안 함
+    if any(e.get("before") == before and e.get("after") == after for e in arr):
+        pass
+    else:
+        arr.append({"before": before, "after": after, "ts": int(time.time() * 1000)})
+        d[account_id] = arr[-50:]
+        _save_edits(d)
+    # 고친 결과물 자체도 '잘 쓴 글' 예시로 학습
+    add_sample(account_id, after)
+    return True
+
+
+def get_edit_lessons(account_id: str | None, limit: int = 6) -> list[dict]:
+    """최근 교정 사례(최신 우선)를 반환합니다."""
+    arr = _load_edits().get(account_id or "", [])
+    return list(reversed(arr))[:limit]
+

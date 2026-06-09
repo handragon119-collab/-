@@ -59,6 +59,31 @@ def delete(item_id: str) -> None:
     _save([i for i in _load() if i.get("id") != item_id])
 
 
+def get(item_id: str) -> dict | None:
+    for i in _load():
+        if i.get("id") == item_id:
+            return i
+    return None
+
+
+def update_text(item_id: str, text: str) -> dict | None:
+    """예약된 글의 본문을 수정합니다. 발행 전(pending)만 수정 가능.
+
+    수정 전 본문은 반환값의 'old_text'로 돌려줘 학습에 쓸 수 있게 한다.
+    """
+    items = _load()
+    for i in items:
+        if i.get("id") == item_id:
+            if i.get("status") != "pending":
+                return None  # 이미 발행/실패한 글은 수정 불가
+            old = i.get("text", "")
+            i["text"] = text
+            i["old_text"] = old
+            _save(items)
+            return {"item": i, "old_text": old}
+    return None
+
+
 def due(now_ms: int | None = None) -> list[dict]:
     """발행 시각이 된 pending 항목들."""
     now = now_ms or int(time.time() * 1000)

@@ -23,6 +23,8 @@ import random
 
 from threads_auto import safety
 from threads_auto import accounts
+from threads_auto import samples
+from threads_auto import scheduled_posts
 from threads_auto.content_generator import (
     ContentGenerator,
     load_categorized_topics,
@@ -171,11 +173,13 @@ def api_generate():
     advanced = bool(data.get("advanced", True))  # 기본: 고급 파이프라인
     topic = _resolve_topic(topic, category)
 
-    persona, examples, _ = _active_persona()
+    persona, examples, acc_id = _active_persona()
+    lessons = samples.get_edit_lessons(acc_id)
     try:
         if advanced and topic:
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            result = pipe.run(topic, persona=persona, examples=examples, category=category)
+            result = pipe.run(topic, persona=persona, examples=examples,
+                              category=category, edit_lessons=lessons)
             return jsonify({
                 "ok": True, "text": result["text"], "topic": topic,
                 "length": len(result["text"]), "meta": result["meta"],
@@ -210,12 +214,14 @@ def api_auto():
     advanced = bool(data.get("advanced", True))
     topic = _resolve_topic(topic, category)
 
-    persona, examples, _ = _active_persona()
+    persona, examples, acc_id = _active_persona()
+    lessons = samples.get_edit_lessons(acc_id)
     pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
     meta = None
     try:
         if advanced and topic:
-            result = pipe.run(topic, persona=persona, examples=examples, category=category)
+            result = pipe.run(topic, persona=persona, examples=examples,
+                              category=category, edit_lessons=lessons)
             text = result["text"]
             meta = result["meta"]
         else:
@@ -891,6 +897,44 @@ def api_scheduled_delete():
     return jsonify({"ok": True})
 
 
+@app.post("/api/scheduled/edit")
+def api_scheduled_edit():
+    """예약된 글 본문을 수정하고, 수정 내용을 학습합니다(이전 글과 비교)."""
+    from threads_auto import scheduled_posts
+    data = request.get_json(silent=True) or {}
+    item_id = (data.get("id") or "").strip()
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "글이 비어 있어요."}), 400
+    res = scheduled_posts.update_text(item_id, text)
+    if not res:
+        return jsonify({"ok": False, "error": "수정할 수 없는 글이에요(이미 발행됐거나 없음)."}), 400
+    # 이전 글과 비교해 학습: 그 예약 글이 묶인 계정(없으면 활성 계정)으로 저장
+    acc_ids = res["item"].get("account_ids") or []
+    acc_id = acc_ids[0] if acc_ids else (accounts.get_active() or {}).get("id")
+    learned = samples.add_edit(acc_id, res["old_text"], text)
+    return jsonify({"ok": True, "learned": learned})
+
+
+@app.post("/api/learn_edit")
+def api_learn_edit():
+    """글쓰기 칸에서 AI 원본(original)을 사용자가 고친 글(edited)로 바꾼 걸 학습."""
+    data = request.get_json(silent=True) or {}
+    original = (data.get("original") or "").strip()
+    edited = (data.get("edited") or "").strip()
+    acc = accounts.get_active()
+    acc_id = acc.get("id") if acc else None
+    if not acc_id:
+        return jsonify({"ok": False, "error": "활성 계정이 없어요. '계정' 탭에서 골라주세요."}), 400
+    if not edited:
+        return jsonify({"ok": False, "error": "고친 글이 비어 있어요."}), 400
+    if original == edited:
+        return jsonify({"ok": False, "error": "원본과 똑같아요. 고친 내용이 있어야 학습해요."}), 400
+    learned = samples.add_edit(acc_id, original, edited)
+    return jsonify({"ok": learned,
+                    "error": None if learned else "학습할 차이를 찾지 못했어요."})
+
+
 # ── 자동 예약 채우기 (현재 계정 말투로 N일치 글 생성 → 매일 예약) ──
 _autofill_job = {"running": False, "done": 0, "total": 0, "scheduled": 0, "error": ""}
 
@@ -925,6 +969,7 @@ def api_schedule_autofill():
 
     persona = acc.get("persona", "general")
     examples = samples.get_samples(acc["id"], persona, limit=10)
+    lessons = samples.get_edit_lessons(acc["id"])
     pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
 
     cats = load_categorized_topics()
@@ -942,7 +987,7 @@ def api_schedule_autofill():
                 topic = pool[i % len(pool)] if pool else "오늘의 이야기"
                 try:
                     res = pipe.run(topic, persona=persona, examples=examples,
-                                   category=category or "")
+                                   category=category or "", edit_lessons=lessons)
                     text = res.get("text", "").strip()
                 except Exception:  # noqa: BLE001 (한 개 실패해도 계속)
                     text = ""

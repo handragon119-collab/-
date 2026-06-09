@@ -395,13 +395,37 @@ class ThreadsPipeline:
             + joined + "\n"
         )
 
+    def _edit_lessons_block(self, lessons: list[dict] | None) -> str:
+        """사용자가 직접 고친 (before→after) 교정 사례를 프롬프트에 주입."""
+        if not lessons:
+            return ""
+        rows = []
+        for i, e in enumerate(lessons, 1):
+            before = (e.get("before") or "").strip()
+            after = (e.get("after") or "").strip()
+            if not after:
+                continue
+            rows.append(f"[교정 {i}]\n(AI가 쓴 원본) {before}\n(사용자가 고친 글) {after}")
+        if not rows:
+            return ""
+        return (
+            "\n\n[‼️ 사용자 교정 사례 — 가장 중요한 지침]\n"
+            "예전에 AI가 '원본'처럼 썼더니 사용자가 '고친 글'처럼 직접 손봤다.\n"
+            "이건 사용자가 진짜 원하는 방향이다. 무엇이 바뀌었는지(말투·길이·표현·"
+            "이모지·군더더기 제거 등) 스스로 파악해서, 이번 글도 '고친 글' 쪽 방향을 "
+            "그대로 따르고 '원본'에서 사용자가 지운 특징은 반복하지 마라.\n"
+            "(내용을 복붙하라는 게 아니라 '고친 방향·취향'을 학습하라는 뜻이다.)\n\n"
+            + "\n———\n".join(rows) + "\n"
+        )
+
     def write_styled(self, topic: str, style_extra: str, examples: list[str],
-                     facts: str = "") -> str:
+                     facts: str = "", edit_lessons: list[dict] | None = None) -> str:
         """리서치 없이, 계정 페르소나 문체 + 예시(few-shot)로 곧장 작성합니다."""
         system = STYLE_GUIDE + (style_extra or "")
         user = (
             f"[이번에 쓸 주제] {topic}\n"
             + self._examples_block(examples)
+            + self._edit_lessons_block(edit_lessons)
             + _facts_block(facts)
             + "\n위 문체 가이드의 '화자 시점·말투'를 반드시 지키고, 예시들의 '느낌'으로 "
             "이 주제에 맞는 새 게시글 한 편을 써라. 짧고 통통 튀게. 문장 복붙은 금지."
@@ -411,7 +435,7 @@ class ThreadsPipeline:
 
     def write(self, topic: str, research: dict, facts: dict,
               style_extra: str = "", examples: list[str] | None = None,
-              info: str = "") -> str:
+              info: str = "", edit_lessons: list[dict] | None = None) -> str:
         brief = [f"주제: {topic}"]
         if research.get("angle"):
             brief.append(f"차별화 각도: {research['angle']}")
@@ -434,7 +458,9 @@ class ThreadsPipeline:
             brief.append("이 글엔 검증된 사실 데이터가 없으니, 수치·단정적 주장은 쓰지 마라.")
 
         system = STYLE_GUIDE + (style_extra or "")
-        user = "\n".join(brief) + self._examples_block(examples or []) + _facts_block(info) + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게."
+        user = ("\n".join(brief) + self._examples_block(examples or [])
+                + self._edit_lessons_block(edit_lessons) + _facts_block(info)
+                + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게.")
         text = self._complete(system, user, max_tokens=800)
         if len(text) > 260:
             text = text[:260].rstrip()
@@ -563,7 +589,8 @@ class ThreadsPipeline:
 
     # ── 전체 실행 ──
     def run(self, topic: str, persona: str = "general",
-            examples: list[str] | None = None, category: str = "") -> dict:
+            examples: list[str] | None = None, category: str = "",
+            edit_lessons: list[dict] | None = None) -> dict:
         """리서치→(팩트)→글쓰기. {text, meta} 반환.
 
         말투가 강한 페르소나(강아지/사장님)나 방향이 있는 카테고리(재테크 등)는
@@ -577,7 +604,8 @@ class ThreadsPipeline:
         info = persona_facts(persona)  # 계정별 가격·이벤트 등 사실 정보
 
         if combined:
-            text = self.write_styled(topic, combined, examples, facts=info)
+            text = self.write_styled(topic, combined, examples, facts=info,
+                                     edit_lessons=edit_lessons)
             return {"text": text, "meta": {"angle": "", "sensitivity": "low",
                                            "sensitivity_note": "", "facts": []}}
 
@@ -586,7 +614,7 @@ class ThreadsPipeline:
         if research.get("needs_facts"):
             facts = self.factcheck(topic, research.get("angle", ""))
         text = self.write(topic, research, facts, style_extra=combined,
-                          examples=examples, info=info)
+                          examples=examples, info=info, edit_lessons=edit_lessons)
         return {
             "text": text,
             "meta": {
