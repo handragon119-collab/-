@@ -119,6 +119,32 @@ STYLE_BY_CATEGORY = {
     "사진관": STUDIO_STYLE,
 }
 
+# 재테크/소비 카테고리 전용 — 절약·저축·돈 모으기(서민 공감). 플렉스·합리화 금지.
+MONEY_STYLE = """
+[재테크/소비 카테고리 전용 — 평범한 직장인·서민의 '돈 아끼고 모으는' 이야기]
+‼️ 화자는 돈 많은 사람이 아니라 '월급 빠듯한 평범한 사람'이다. 공감이 1순위다.
+‼️ 절대 금지: 소비를 멋지게 합리화하는 톤.
+   "택시비는 자유를 산 거다", "배달비는 설거지 안 할 권리값", "가심비/자유비로 따져봐"
+   같은 '돈 쓰는 걸 정당화'하는 글은 사치꾼처럼 보여서 금지다.
+   비싼 물건 자랑·플렉스·"이 정도는 써도 된다" 식도 금지.
+✅ 대신 이렇게 써라: 어떻게 '아끼고·모으고·저축했는지' 현실적인 방법·습관을 나눈다.
+   - 작게 시작하는 실천 한 가지를 구체적으로. (예: 통장 쪼개기, 자동이체 강제저축,
+     무지출 데이, 배달 끊고 장보기, 구독 정리, 가계부, 짠테크, 비상금 모으기)
+   - 먼저 공감(월급 스치듯 사라짐, 돈 없는 현실)으로 시작해 스크롤을 멈추게 하고,
+     그다음 '나는 이렇게 바꿨다'는 작은 팁이나 변화를 솔직하게.
+   - 숫자는 현실적으로(만원·몇만원 단위). 없는 수익·과장된 금액은 절대 지어내지 마라.
+   - 마지막은 가벼운 다짐이나 "너넨 어떻게 아껴?" 같은 공감 질문으로.
+- 반말, 짧게, 줄바꿈으로 호흡. 잘난 척·훈수 톤 금지. 같이 아끼는 동료처럼.
+- 해시태그 0~1개, 이모지 0~1개. 마크다운 금지, 본문만.
+"""
+
+STYLE_BY_CATEGORY["재테크/소비"] = MONEY_STYLE
+
+
+def category_style(category: str) -> str:
+    """카테고리별 '글 방향(주제 각도)' 가이드. 계정 페르소나(말투)에 더해진다."""
+    return STYLE_BY_CATEGORY.get((category or "").strip(), "")
+
 FOUNDER_STYLE = """
 [sentimental624 페르소나 — 야망 있는 젊은 대표 / 크리에이터의 날것 1인칭]
 - 화자는 '나'. 사업하는 대표이자 크리에이터다. 사진(프로필·증명사진) 사업도 한다.
@@ -453,17 +479,21 @@ class ThreadsPipeline:
 
     # ── 전체 실행 ──
     def run(self, topic: str, persona: str = "general",
-            examples: list[str] | None = None) -> dict:
+            examples: list[str] | None = None, category: str = "") -> dict:
         """리서치→(팩트)→글쓰기. {text, meta} 반환.
 
-        말투가 강한 페르소나(강아지/사장님)는 리서치를 건너뛰고 예시 기반으로 곧장 작성.
+        말투가 강한 페르소나(강아지/사장님)나 방향이 있는 카테고리(재테크 등)는
+        리서치를 건너뛰고 예시 기반으로 곧장 작성.
+        계정 페르소나(말투) + 카테고리 방향(주제 각도)을 함께 적용한다.
         """
         style_extra = persona_style(persona)
+        cat_extra = category_style(category)
+        combined = (style_extra or "") + (cat_extra or "")
         examples = examples or []
         info = persona_facts(persona)  # 계정별 가격·이벤트 등 사실 정보
 
-        if style_extra:
-            text = self.write_styled(topic, style_extra, examples, facts=info)
+        if combined:
+            text = self.write_styled(topic, combined, examples, facts=info)
             return {"text": text, "meta": {"angle": "", "sensitivity": "low",
                                            "sensitivity_note": "", "facts": []}}
 
@@ -471,7 +501,7 @@ class ThreadsPipeline:
         facts = {"verified_facts": [], "note": ""}
         if research.get("needs_facts"):
             facts = self.factcheck(topic, research.get("angle", ""))
-        text = self.write(topic, research, facts, style_extra=style_extra,
+        text = self.write(topic, research, facts, style_extra=combined,
                           examples=examples, info=info)
         return {
             "text": text,

@@ -175,7 +175,7 @@ def api_generate():
     try:
         if advanced and topic:
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            result = pipe.run(topic, persona=persona, examples=examples)
+            result = pipe.run(topic, persona=persona, examples=examples, category=category)
             return jsonify({
                 "ok": True, "text": result["text"], "topic": topic,
                 "length": len(result["text"]), "meta": result["meta"],
@@ -215,7 +215,7 @@ def api_auto():
     meta = None
     try:
         if advanced and topic:
-            result = pipe.run(topic, persona=persona, examples=examples)
+            result = pipe.run(topic, persona=persona, examples=examples, category=category)
             text = result["text"]
             meta = result["meta"]
         else:
