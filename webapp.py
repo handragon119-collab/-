@@ -891,6 +891,86 @@ def api_scheduled_delete():
     return jsonify({"ok": True})
 
 
+# ── 자동 예약 채우기 (현재 계정 말투로 N일치 글 생성 → 매일 예약) ──
+_autofill_job = {"running": False, "done": 0, "total": 0, "scheduled": 0, "error": ""}
+
+
+@app.post("/api/schedule_autofill")
+def api_schedule_autofill():
+    """현재 계정 말투로 N일치 글을 생성해 매일 1개씩 예약합니다(백그라운드)."""
+    if _autofill_job["running"]:
+        return jsonify({"ok": True, "running": True, "already": True})
+    try:
+        config.require_anthropic()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    acc = accounts.get_active()
+    if not acc:
+        return jsonify({"ok": False, "error": "연결된 계정이 없어요. '계정' 탭에서 추가하세요."}), 400
+
+    data = request.get_json(silent=True) or {}
+    days = max(1, min(30, int(data.get("days", 10))))
+    time_str = (data.get("time") or "21:00").strip()
+    category = (data.get("category") or "").strip() or None
+    try:
+        hh, mm = (int(x) for x in time_str.split(":")[:2])
+    except Exception:  # noqa: BLE001
+        hh, mm = 21, 0
+
+    from datetime import timedelta
+    from threads_auto.content_generator import load_categorized_topics
+    from threads_auto import samples, scheduled_posts
+
+    persona = acc.get("persona", "general")
+    examples = samples.get_samples(acc["id"], persona, limit=10)
+    pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+
+    cats = load_categorized_topics()
+    pool = list(cats[category]) if (category and category in cats) else \
+        [t for items in cats.values() for t in items]
+    random.shuffle(pool)
+
+    # 발행 시각: 오늘 그 시각이 지났으면 내일부터 하루 간격
+    now = datetime.now()
+    base = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    if base <= now + timedelta(minutes=2):
+        base = base + timedelta(days=1)
+    slots = [base + timedelta(days=i) for i in range(days)]
+
+    _autofill_job.update(running=True, done=0, total=days, scheduled=0, error="")
+
+    def work():
+        try:
+            for i, slot in enumerate(slots):
+                topic = pool[i % len(pool)] if pool else "오늘의 이야기"
+                try:
+                    res = pipe.run(topic, persona=persona, examples=examples,
+                                   category=category or "")
+                    text = res.get("text", "").strip()
+                except Exception:  # noqa: BLE001 (한 개 실패해도 계속)
+                    text = ""
+                if text:
+                    scheduled_posts.add(text, int(slot.timestamp() * 1000),
+                                        [acc["id"]], topic=topic)
+                    _autofill_job["scheduled"] += 1
+                _autofill_job["done"] = i + 1
+            _ensure_publish_watcher()
+        except Exception as exc:  # noqa: BLE001
+            _autofill_job["error"] = str(exc)
+        finally:
+            _autofill_job["running"] = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"ok": True, "running": True})
+
+
+@app.get("/api/schedule_autofill_status")
+def api_schedule_autofill_status():
+    return jsonify({"ok": True, "running": _autofill_job["running"],
+                    "done": _autofill_job["done"], "total": _autofill_job["total"],
+                    "scheduled": _autofill_job["scheduled"], "error": _autofill_job["error"]})
+
+
 @app.get("/api/topics")
 def api_get_topics():
     content = TOPICS_PATH.read_text(encoding="utf-8") if TOPICS_PATH.exists() else ""
