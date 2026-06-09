@@ -681,6 +681,58 @@ def api_auto_reply_status():
     })
 
 
+# ── 성과 분석(인사이트) ──
+_insights_job = {"running": False, "done": 0, "total": 0, "result": None, "error": ""}
+
+
+@app.post("/api/insights_run")
+def api_insights_run():
+    """현재(또는 지정) 계정의 최근 글 성과를 백그라운드로 분석합니다."""
+    if _insights_job["running"]:
+        return jsonify({"ok": True, "running": True, "already": True})
+    data = request.get_json(silent=True) or {}
+    acc_id = data.get("id")
+    acc = accounts.get_account(acc_id) if acc_id else accounts.get_active()
+    if not acc:
+        return jsonify({"ok": False, "error": "연결된 계정이 없어요."}), 400
+    limit = int(data.get("limit", 25))
+
+    from threads_auto import analytics
+    akey = config.ANTHROPIC_API_KEY or ""
+    model = config.CLAUDE_MODEL
+
+    _insights_job.update(running=True, done=0, total=0, result=None, error="")
+
+    def work():
+        try:
+            def prog(done, total):
+                _insights_job["done"] = done
+                _insights_job["total"] = total
+            res = analytics.analyze(acc, limit=limit, on_progress=prog,
+                                    anthropic_key=akey, model=model)
+            _insights_job["result"] = res
+            if not res.get("ok"):
+                _insights_job["error"] = res.get("error", "")
+        except ThreadsError as exc:
+            _insights_job["error"] = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            _insights_job["error"] = str(exc)
+        finally:
+            _insights_job["running"] = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({"ok": True, "running": True})
+
+
+@app.get("/api/insights_status")
+def api_insights_status():
+    return jsonify({
+        "ok": True, "running": _insights_job["running"],
+        "done": _insights_job["done"], "total": _insights_job["total"],
+        "result": _insights_job["result"], "error": _insights_job["error"],
+    })
+
+
 @app.get("/api/topics")
 def api_get_topics():
     content = TOPICS_PATH.read_text(encoding="utf-8") if TOPICS_PATH.exists() else ""

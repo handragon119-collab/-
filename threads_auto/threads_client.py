@@ -57,7 +57,7 @@ class ThreadsClient:
         """내 최근 게시물 목록(페이지 넘기며 모음)."""
         out: list[dict] = []
         data = self._get(f"{self.user_id}/threads",
-                         {"fields": "id,text,timestamp", "limit": 50})
+                         {"fields": "id,text,timestamp,media_type,permalink", "limit": 50})
         out += data.get("data", [])
         nxt = (data.get("paging") or {}).get("next")
         pages = 1
@@ -89,6 +89,55 @@ class ThreadsClient:
             out += j.get("data", [])
             nxt = (j.get("paging") or {}).get("next")
             pages += 1
+        return out
+
+    def get_post_insights(self, media_id: str) -> dict:
+        """게시물 인사이트(조회수·좋아요·댓글·리포스트 등).
+
+        토큰에 'threads_manage_insights' 권한이 필요합니다.
+        반환 예: {"views": 1234, "likes": 56, "replies": 7, "reposts": 2, "quotes": 0, "shares": 1}
+        """
+        params = {
+            "metric": "views,likes,replies,reposts,quotes,shares",
+            "access_token": self.access_token,
+        }
+        resp = requests.get(
+            f"{GRAPH_BASE}/{media_id}/insights", params=params, timeout=self.timeout
+        )
+        if resp.status_code >= 400:
+            raise ThreadsError(f"인사이트 조회 실패 {resp.status_code}: {resp.text}")
+        out: dict = {}
+        for m in resp.json().get("data", []):
+            name = m.get("name")
+            val = None
+            tv = m.get("total_value")
+            if isinstance(tv, dict):
+                val = tv.get("value")
+            if val is None:
+                vals = m.get("values") or []
+                if vals:
+                    val = vals[0].get("value")
+            out[name] = val or 0
+        return out
+
+    def get_user_insights(self, metrics: str = "views") -> dict:
+        """계정 단위 인사이트(예: 최근 조회수, 팔로워 수). 권한 필요."""
+        params = {"metric": metrics, "access_token": self.access_token}
+        resp = requests.get(
+            f"{GRAPH_BASE}/{self.user_id}/threads_insights", params=params,
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            raise ThreadsError(f"계정 인사이트 조회 실패 {resp.status_code}: {resp.text}")
+        out: dict = {}
+        for m in resp.json().get("data", []):
+            name = m.get("name")
+            tv = m.get("total_value")
+            if isinstance(tv, dict):
+                out[name] = tv.get("value", 0)
+            else:
+                vals = m.get("values") or []
+                out[name] = vals[-1].get("value", 0) if vals else 0
         return out
 
     def like(self, media_id: str) -> None:

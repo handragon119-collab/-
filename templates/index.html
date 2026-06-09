@@ -136,6 +136,7 @@
     <button class="tab" data-tab="topics">📋 주제</button>
     <button class="tab" data-tab="accounts">👤 계정</button>
     <button class="tab" data-tab="schedule">⏰ 자동</button>
+    <button class="tab" data-tab="insights">📊 분석</button>
     <button class="tab" data-tab="history">📜 기록</button>
   </div>
 
@@ -241,6 +242,16 @@
       <label>🔁 실시간 자동 답글 (계정별)</label>
       <p class="hint">👤 <b>계정 탭</b>에서 계정마다 켜두면, 앱이 켜져 있는 동안 <b>새 댓글을 계속 추적</b>해서 그 계정 말투로 <b>바로바로</b> 답글을 달아요. 여러 계정 동시에 가능해요.</p>
       <div id="autoReplyStatus"><p class="hint">불러오는 중…</p></div>
+    </div>
+  </div>
+
+  <!-- 분석 -->
+  <div class="panel" id="panel-insights">
+    <div class="card">
+      <p class="hint">현재 계정의 최근 글 <b>실제 조회수·좋아요·댓글</b>을 가져와서, 조회수 추세와 잘 되는 글·시간대를 분석하고 <b>해결방안</b>까지 만들어줘요.</p>
+      <button class="primary" id="insightsBtn">📊 내 글 성과 분석하기</button>
+      <p class="hint">⚠️ 토큰에 <b>threads_manage_insights</b> 권한이 필요해요. 없으면 권한 추가 후 토큰을 다시 발급받아 계정을 등록하세요.</p>
+      <div id="insightsResult" style="margin-top:14px"></div>
     </div>
   </div>
 
@@ -600,6 +611,89 @@ async function pollAutoReply() {
 function startAutoReplyPoll() { if (autoReplyPoll) return; pollAutoReply(); autoReplyPoll = setInterval(pollAutoReply, 5000); }
 function stopAutoReplyPoll() { if (autoReplyPoll) { clearInterval(autoReplyPoll); autoReplyPoll = null; } }
 setInterval(() => { if (AUTO_REPLY.activity && AUTO_REPLY.activity.length) renderAutoReply(); }, 20000);
+
+// 성과 분석(인사이트)
+let insightsPoll = null;
+const nfmt = (n) => { n = n || 0; if (n >= 10000) return (n/10000).toFixed(1).replace(/\.0$/,"") + "만"; if (n >= 1000) return (n/1000).toFixed(1).replace(/\.0$/,"") + "천"; return "" + n; };
+function renderInsights(res) {
+  const box = $("insightsResult");
+  if (!res) { box.innerHTML = ""; return; }
+  if (!res.ok) {
+    if (res.need_permission) {
+      box.innerHTML = '<div class="rep fail"><div class="lbl">인사이트 권한 없음</div><div class="cmt">토큰에 <b>threads_manage_insights</b> 권한을 추가하고 토큰을 다시 발급받아 계정을 등록하면 조회수 분석이 가능해요.</div></div>';
+    } else {
+      box.innerHTML = '<p class="hint">분석 실패: ' + esc(res.error || "알 수 없는 오류") + '</p>';
+    }
+    return;
+  }
+  const s = res.summary;
+  const up = s.trend_pct >= 0;
+  const arrow = up ? "▲" : "▼";
+  const tcol = up ? "var(--ok)" : "#ff6b6b";
+  let html = "";
+  // 추세 카드
+  html += `<div class="item"><div class="lbl">📈 조회수 추세 (최근 ${s.count}개 글)</div>
+    <div style="font-size:22px;font-weight:800;margin:6px 0">평균 ${nfmt(s.avg_views)}회
+      <span style="font-size:15px;color:${tcol};margin-left:8px">${arrow} ${Math.abs(s.trend_pct)}%</span></div>
+    <div class="hint" style="margin:0">최근 절반 평균 ${nfmt(s.recent_avg)} · 이전 절반 평균 ${nfmt(s.older_avg)}<br>평균 좋아요 ${s.avg_likes} · 평균 댓글 ${s.avg_replies} · 평균 참여율 ${s.avg_eng}%</div></div>`;
+  // 미니 막대 (최근 14개)
+  if (s.series && s.series.length) {
+    const mx = Math.max(...s.series.map(p=>p.views), 1);
+    html += '<div class="item"><div class="lbl">최근 글별 조회수</div><div style="display:flex;align-items:flex-end;gap:3px;height:70px;margin-top:8px">' +
+      s.series.map(p => `<div title="${p.when}: ${p.views}" style="flex:1;background:var(--accent,#6c8cff);border-radius:3px 3px 0 0;height:${Math.max(4, p.views/mx*100)}%"></div>`).join("") +
+      '</div><div class="hint" style="margin:6px 0 0">왼쪽이 오래된 글, 오른쪽이 최신 글</div></div>';
+  }
+  // 베스트 글
+  if (s.top && s.top.length) {
+    html += '<div class="item"><div class="lbl">🔥 잘 된 글 TOP 3</div>' + s.top.map(t =>
+      `<div style="margin-top:8px"><div style="font-weight:700">조회 ${nfmt(t.views)} · ❤️ ${t.likes} · 💬 ${t.replies} <span class="hint" style="margin:0">(${t.when}${t.media_type ? " · "+t.media_type : ""})</span></div><div class="cmt" style="margin-top:3px">${esc(t.text)}</div></div>`
+    ).join("") + '</div>';
+  }
+  // 안 된 글
+  if (s.worst && s.worst.length) {
+    html += '<div class="item"><div class="lbl">🥶 아쉬운 글</div>' + s.worst.map(t =>
+      `<div style="margin-top:8px"><div style="font-weight:700">조회 ${nfmt(t.views)} · ❤️ ${t.likes} <span class="hint" style="margin:0">(${t.when})</span></div><div class="cmt" style="margin-top:3px">${esc(t.text)}</div></div>`
+    ).join("") + '</div>';
+  }
+  // 시간대/요일
+  if (s.best_hours && s.best_hours.length) {
+    html += '<div class="item"><div class="lbl">⏰ 잘 되는 시간대</div><div style="margin-top:6px">' +
+      s.best_hours.map(h => `<span class="badge on" style="margin:3px 4px 0 0">${h.hour}시 · 평균 ${nfmt(h.avg)}</span>`).join("") +
+      (s.best_wdays && s.best_wdays.length ? '<br><span class="hint">잘 되는 요일: ' + s.best_wdays.map(d=>d.day+"("+nfmt(d.avg)+")").join(", ") + '</span>' : '') +
+      '</div></div>';
+  }
+  // AI 진단
+  if (res.diagnosis) {
+    html += '<div class="item" style="border-left:3px solid var(--ok)"><div class="lbl">🧠 분석 & 해결방안</div><div class="item-text" style="white-space:pre-wrap;margin-top:6px">' + esc(res.diagnosis) + '</div></div>';
+  }
+  if (!res.insights_ok) {
+    html += '<p class="hint">⚠️ 일부 글은 인사이트를 못 가져왔어요(아주 최근 글이거나 권한 문제일 수 있어요).</p>';
+  }
+  box.innerHTML = html;
+}
+async function pollInsights() {
+  try {
+    const s = await api("/api/insights_status");
+    if (s.running) {
+      $("insightsResult").innerHTML = `<p class="hint"><span class="spin"></span>분석 중… ${s.total ? s.done + "/" + s.total + " 글" : ""}</p>`;
+      return;
+    }
+    clearInterval(insightsPoll); insightsPoll = null;
+    $("insightsBtn").disabled = false; $("insightsBtn").textContent = "📊 내 글 성과 분석하기";
+    if (s.error && !s.result) { $("insightsResult").innerHTML = '<p class="hint">분석 실패: ' + esc(s.error) + '</p>'; return; }
+    renderInsights(s.result);
+  } catch (e) {}
+}
+$("insightsBtn").onclick = async () => {
+  $("insightsBtn").disabled = true; $("insightsBtn").innerHTML = '<span class="spin"></span>분석 시작…';
+  $("insightsResult").innerHTML = '<p class="hint">최근 글을 불러오는 중…</p>';
+  try {
+    const r = await api("/api/insights_run", { method: "POST", body: JSON.stringify({ limit: 25 }) });
+    if (!r.ok) { toast(r.error || "실패", "error"); $("insightsBtn").disabled = false; $("insightsBtn").textContent = "📊 내 글 성과 분석하기"; return; }
+    if (insightsPoll) clearInterval(insightsPoll);
+    insightsPoll = setInterval(pollInsights, 2000); pollInsights();
+  } catch (e) { toast("오류: " + e, "error"); $("insightsBtn").disabled = false; $("insightsBtn").textContent = "📊 내 글 성과 분석하기"; }
+};
 
 // 기록
 async function loadHistory() {
