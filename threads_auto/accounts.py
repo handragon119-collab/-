@@ -61,6 +61,7 @@ def public_list() -> list[dict]:
          "profile_pic": a.get("profile_pic", ""),
          "persona": a.get("persona", "general"),
          "persona_label": persona_label(a.get("persona", "general")),
+         "auto_reply": bool(a.get("auto_reply", False)),
          "active": a["id"] == active_id}
         for a in list_accounts()
     ]
@@ -113,6 +114,7 @@ def add_account(label: str, user_id: str, token: str, persona: str = "general") 
         "username": prof.get("username", ""),
         "profile_pic": prof.get("profile_pic", ""),
         "persona": persona or "general",
+        "auto_reply": False,  # 댓글 자동 답글(실시간 추적) on/off
         "active": len(items) == 0,  # 첫 계정이면 활성
     }
     items.append(acc)
@@ -127,6 +129,23 @@ def set_persona(acc_id: str, persona: str) -> None:
         if a["id"] == acc_id:
             a["persona"] = persona or "general"
     _save_raw(items)
+
+
+def set_auto_reply(acc_id: str, on: bool) -> None:
+    """계정의 '댓글 자동 답글(실시간 추적)' on/off를 저장합니다."""
+    items = list_accounts()
+    for a in items:
+        if a["id"] == acc_id:
+            a["auto_reply"] = bool(on)
+    _save_raw(items)
+
+
+def auto_reply_on(acc_id: str) -> bool:
+    """이 계정의 자동 답글이 켜져 있는지(최신 저장값 기준)."""
+    for a in list_accounts():
+        if a["id"] == acc_id:
+            return bool(a.get("auto_reply", False))
+    return False
 
 
 def refresh_profiles() -> list[dict]:

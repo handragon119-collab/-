@@ -105,6 +105,13 @@
   .badge.off { background: var(--card2); color: var(--muted); }
   .spin { display:inline-block; width:14px; height:14px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:r .7s linear infinite; vertical-align:-2px; margin-right:6px; }
   @keyframes r { to { transform: rotate(360deg);} }
+  /* 토글 스위치 */
+  .switch { position:relative; display:inline-block; width:46px; height:26px; flex-shrink:0; }
+  .switch input { opacity:0; width:0; height:0; }
+  .switch .slider { position:absolute; cursor:pointer; inset:0; background:var(--card2); border-radius:999px; transition:.2s; }
+  .switch .slider:before { content:""; position:absolute; height:20px; width:20px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+  .switch input:checked + .slider { background: var(--ok); }
+  .switch input:checked + .slider:before { transform: translateX(20px); }
   .acct-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .acct-row img, .acct-row .ph { width:40px; height:40px; border-radius:50%; object-fit:cover; }
   .acct-row .ph { background: var(--card); display:flex; align-items:center; justify-content:center; }
@@ -229,6 +236,11 @@
       </div>
       <p class="hint">현재 계정의 새 댓글에 그 계정 말투로 <b>전부</b> 답글을 달아요(수량 제한 없음, 이미 답한 건 건너뜀).<br>🧑‍💻 사람처럼 댓글마다 <b>읽고·타이핑하는 시간차</b>를 둬서 천천히 진행해요. 백그라운드로 돌고 <b>보고서가 실시간</b>으로 채워져요(창은 켜둬야 해요).<br>⚠️ 토큰에 <b>threads_manage_replies</b> 권한 필요. · 좋아요는 Threads 공식 API 미지원이라 답글로 대체돼요.</p>
       <div id="replyReport" style="margin-top:12px"></div>
+
+      <hr class="divider" />
+      <label>🔁 실시간 자동 답글 (계정별)</label>
+      <p class="hint">👤 <b>계정 탭</b>에서 계정마다 켜두면, 앱이 켜져 있는 동안 <b>새 댓글을 계속 추적</b>해서 그 계정 말투로 <b>바로바로</b> 답글을 달아요. 여러 계정 동시에 가능해요.</p>
+      <div id="autoReplyStatus"><p class="hint">불러오는 중…</p></div>
     </div>
   </div>
 
@@ -282,6 +294,7 @@ document.querySelectorAll(".tab").forEach((b) => {
     if (b.dataset.tab === "history") loadHistory();
     if (b.dataset.tab === "topics") loadTopics();
     if (b.dataset.tab === "accounts") loadAccounts();
+    if (b.dataset.tab === "schedule") startAutoReplyPoll(); else stopAutoReplyPoll();
   };
 });
 
@@ -376,6 +389,10 @@ async function loadAccounts() {
       <div class="acct-row"><span style="display:flex;align-items:center;gap:10px;min-width:0">${pic}<span style="min-width:0"><b>${name}</b><br><span class="hint" style="margin:0">${a.label}</span></span></span>
       <span style="display:flex;gap:6px;flex-shrink:0">${sw}<button class="ghost" style="width:auto;padding:9px 12px" data-del="${a.id}">삭제</button></span></div>
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px"><span class="hint" style="margin:0">말투</span><select data-persona="${a.id}" style="flex:1">${personaOptions(a.persona)}</select></div>
+      <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span class="hint" style="margin:0">💬 댓글 자동 답글 <span class="hint" style="margin:0;opacity:.7">(새 댓글 추적·바로 답글)</span></span>
+        <label class="switch"><input type="checkbox" data-autoreply="${a.id}"${a.auto_reply ? " checked" : ""}><span class="slider"></span></label>
+      </div>
     </div>`;
   }).join("") : '<p class="hint">아직 계정이 없어요.</p>';
   list.querySelectorAll("[data-active]").forEach((el) => el.onclick = async () => {
@@ -390,6 +407,12 @@ async function loadAccounts() {
   list.querySelectorAll("[data-persona]").forEach((el) => el.onchange = async () => {
     const r2 = await api("/api/accounts/persona", { method: "POST", body: JSON.stringify({ id: el.dataset.persona, persona: el.value }) });
     if (r2.ok) { toast("말투를 바꿨어요.", "ok"); loadAccounts(); loadStatus(); }
+  });
+  list.querySelectorAll("[data-autoreply]").forEach((el) => el.onchange = async () => {
+    const on = el.checked;
+    const r2 = await api("/api/accounts/auto_reply", { method: "POST", body: JSON.stringify({ id: el.dataset.autoreply, on }) });
+    if (r2.ok) { toast(on ? "자동 답글 켜짐 — 새 댓글을 추적해요." : "자동 답글 꺼짐", "ok"); }
+    else { el.checked = !on; toast(r2.error || "실패", "error"); }
   });
 }
 $("refreshAccBtn").onclick = async () => { toast("정보 가져오는 중…"); const r = await api("/api/accounts/refresh", { method: "POST" }); if (r.ok) { toast("새로고침 완료", "ok"); loadAccounts(); loadStatus(); } };
@@ -540,6 +563,43 @@ $("replyBtn").onclick = async () => {
   } catch (e) { toast("오류: " + e, "error"); $("replyBtn").disabled = false; $("replyBtn").textContent = "지금 내 글 댓글에 답글 달기"; }
 };
 $("replyStopBtn").onclick = async () => { await api("/api/reply_stop", { method: "POST" }); toast("곧 멈춰요…"); };
+
+// 실시간 자동 답글(계정별) 상태
+let autoReplyPoll = null, AUTO_REPLY = { active: [], activity: [], last_cycle: null, interval: 60 };
+function renderAutoReply() {
+  const a = AUTO_REPLY, box = $("autoReplyStatus");
+  let html = "";
+  if (!a.active.length) {
+    html += '<p class="hint">꺼져 있어요. 👤 계정 탭에서 계정마다 켤 수 있어요.</p>';
+  } else {
+    html += `<p class="lbl" style="margin:4px 0 8px">🟢 추적 중인 계정: ${a.active.map((n)=>"@"+esc(n)).join(", ")}</p>`;
+    const last = a.last_cycle ? agoKo(a.last_cycle) : "곧";
+    html += `<p class="hint">약 ${a.interval}초마다 새 댓글을 확인해요. 마지막 확인: ${last}.</p>`;
+  }
+  const acts = (a.activity || []).slice().reverse();
+  if (acts.length) {
+    html += `<p class="lbl" style="margin:10px 0 8px">📋 최근 자동 답글 (${acts.filter(i=>i.ok).length}개)</p>`;
+    html += acts.map((it) => {
+      if (!it.ok) return `<div class="rep fail"><div class="lbl">실패</div><div class="cmt">${esc(it.error)}</div></div>`;
+      return `<div class="rep">
+        <div class="who">@${esc(it.account)} → @${esc(it.to) || "익명"}</div>
+        <div class="lbl">상대 댓글 · ${agoKo(it.comment_epoch)}</div><div class="cmt">${esc(it.comment)}</div>
+        <div class="lbl">자동 답글 · ${agoKo(it.reply_epoch || it.ts)}</div><div class="mine">${esc(it.reply)}</div>
+      </div>`;
+    }).join("");
+  }
+  box.innerHTML = html;
+}
+async function pollAutoReply() {
+  try {
+    const s = await api("/api/auto_reply_status");
+    if (s.ok) { AUTO_REPLY = s; renderAutoReply(); }
+  } catch (e) {}
+}
+// 자동 탭에서만 폴링하도록, 탭 전환 시 켜고/끔
+function startAutoReplyPoll() { if (autoReplyPoll) return; pollAutoReply(); autoReplyPoll = setInterval(pollAutoReply, 5000); }
+function stopAutoReplyPoll() { if (autoReplyPoll) { clearInterval(autoReplyPoll); autoReplyPoll = null; } }
+setInterval(() => { if (AUTO_REPLY.activity && AUTO_REPLY.activity.length) renderAutoReply(); }, 20000);
 
 // 기록
 async function loadHistory() {

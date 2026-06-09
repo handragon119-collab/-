@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -574,6 +575,112 @@ def api_reply_stop():
     return jsonify({"ok": True})
 
 
+# ──────────────────────────────────────────────────────────────────────
+# 댓글 자동 답글 '실시간 추적' — 계정마다 on/off (백그라운드 워처)
+#
+# 앱이 켜져 있는 동안, auto_reply가 켜진 계정들의 새 댓글을 주기적으로
+# 점검해 그 계정 말투로 바로바로 답글을 답니다. 이미 답한 댓글은 건너뜁니다.
+# ──────────────────────────────────────────────────────────────────────
+WATCH_INTERVAL = 60          # 점검 주기(초)
+_reply_lock = threading.Lock()  # 수동 답글 작업과 겹치지 않도록
+_auto_reply = {
+    "started": False,
+    "activity": [],          # 최근 답글 내역(여러 계정 합쳐서, 최신이 뒤)
+    "last_cycle": None,      # 마지막 점검 시각(epoch ms)
+    "active": [],            # 지금 켜진 계정 username/label 목록
+}
+
+
+def _auto_reply_for(acc: dict) -> None:
+    """한 계정의 새 댓글을 점검해 자동 답글을 답니다(워처 1회분)."""
+    from threads_auto.pipeline import persona_style, persona_facts
+    from threads_auto import samples, replies as replies_mod
+
+    persona = acc.get("persona", "general")
+    style_extra = persona_style(persona)
+    facts = persona_facts(persona)
+    examples = samples.get_samples(acc["id"], persona, limit=8)
+    pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+    who = acc.get("username") or acc.get("label") or "계정"
+
+    def reply_fn(post_text, comment_text):
+        return pipe.write_reply(style_extra, examples, post_text, comment_text, facts=facts)
+
+    def on_result(it):
+        item = {**it, "account": who, "ts": int(time.time() * 1000)}
+        _auto_reply["activity"].append(item)
+        _auto_reply["activity"] = _auto_reply["activity"][-100:]
+
+    with _reply_lock:
+        replies_mod.run_for_account(
+            acc, reply_fn, max_replies=0, posts_limit=80,
+            human_typing=True, on_result=on_result,
+            # 도중에 사용자가 이 계정의 자동 답글을 끄면 멈춤
+            should_stop=lambda: not accounts.auto_reply_on(acc["id"]),
+        )
+
+
+def _auto_reply_loop():
+    """켜진 계정들을 주기적으로 순회하며 새 댓글에 자동 답글."""
+    while True:
+        try:
+            if config.ANTHROPIC_API_KEY:
+                on_accs = [a for a in accounts.list_accounts() if a.get("auto_reply")]
+                _auto_reply["active"] = [
+                    (a.get("username") or a.get("label") or "계정") for a in on_accs
+                ]
+                for acc in on_accs:
+                    if not accounts.auto_reply_on(acc["id"]):
+                        continue
+                    try:
+                        _auto_reply_for(acc)
+                    except Exception:  # noqa: BLE001 (한 계정 실패가 전체를 멈추지 않게)
+                        pass
+            _auto_reply["last_cycle"] = int(time.time() * 1000)
+        except Exception:  # noqa: BLE001
+            pass
+        # 다음 점검까지 대기(1초씩 쪼개 종료 신호에 빠르게 반응)
+        for _ in range(WATCH_INTERVAL):
+            time.sleep(1)
+
+
+def _ensure_auto_reply_watcher():
+    if _auto_reply["started"]:
+        return
+    _auto_reply["started"] = True
+    threading.Thread(target=_auto_reply_loop, daemon=True).start()
+
+
+@app.post("/api/accounts/auto_reply")
+def api_account_auto_reply():
+    """계정별 댓글 자동 답글 on/off 토글."""
+    data = request.get_json(silent=True) or {}
+    acc_id = data.get("id")
+    on = bool(data.get("on"))
+    if not acc_id:
+        return jsonify({"ok": False, "error": "계정 ID가 없어요."}), 400
+    if on:
+        try:
+            config.require_anthropic()
+        except RuntimeError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+    accounts.set_auto_reply(acc_id, on)
+    _ensure_auto_reply_watcher()
+    return jsonify({"ok": True, "on": on})
+
+
+@app.get("/api/auto_reply_status")
+def api_auto_reply_status():
+    """자동 답글 워처 상태 + 최근 답글 내역."""
+    return jsonify({
+        "ok": True,
+        "active": _auto_reply["active"],
+        "last_cycle": _auto_reply["last_cycle"],
+        "interval": WATCH_INTERVAL,
+        "activity": _auto_reply["activity"][-40:],
+    })
+
+
 @app.get("/api/topics")
 def api_get_topics():
     content = TOPICS_PATH.read_text(encoding="utf-8") if TOPICS_PATH.exists() else ""
@@ -645,4 +752,6 @@ if __name__ == "__main__":
     print(f"  👉 http://127.0.0.1:{port}")
     print("  (종료하려면 이 창에서 Ctrl+C)")
     print("=" * 50)
+    # 자동 답글이 켜진 계정이 있으면 시작과 동시에 실시간 추적 시작
+    _ensure_auto_reply_watcher()
     app.run(host="127.0.0.1", port=port, debug=False)
