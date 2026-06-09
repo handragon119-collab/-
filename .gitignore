@@ -15,4 +15,5 @@ data/images/
 data/accounts.json
 data/style_samples.json
 data/replied_ids.json
+data/scheduled.json
 *.log

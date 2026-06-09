@@ -486,6 +486,45 @@ def api_set_active():
                     "accounts": accounts.public_list()})
 
 
+def _publish(text: str, image_urls: list, video_url, targets: list,
+             topic=None) -> list:
+    """대상 계정들에 실제 게시 + 기록 + 계정별 학습. results 리스트 반환.
+
+    (즉시 게시 /api/post 와 예약 발행 워처가 공유하는 핵심 로직)
+    """
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    results = []
+    for a in targets:
+        try:
+            client = ThreadsClient(a["user_id"], a["access_token"])
+            post_id = client.post_media(text, image_urls=image_urls, video_url=video_url)
+            results.append({"label": a["label"], "ok": True, "post_id": post_id})
+            with LOG_PATH.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "time": datetime.now().isoformat(timespec="seconds"),
+                    "account": a["label"],
+                    "topic": topic,
+                    "text": text,
+                    "post_id": post_id,
+                    "image_urls": image_urls,
+                    "video_url": video_url,
+                }, ensure_ascii=False) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            results.append({"label": a["label"], "ok": False, "error": str(exc)})
+
+    success = sum(1 for r in results if r["ok"])
+    # 학습: 게시 성공한 '계정별'로 그 글을 학습 예시에 저장 (계정마다 톤 따로 쌓임)
+    if success > 0:
+        try:
+            from threads_auto import samples
+            for a, r in zip(targets, results):
+                if r.get("ok"):
+                    samples.add_sample(a["id"], text)
+        except Exception:  # noqa: BLE001
+            pass
+    return results
+
+
 @app.post("/api/post")
 def api_post():
     """선택한 계정(들)에 글을 게시합니다. image_url이 있으면 이미지와 함께 게시."""
@@ -516,38 +555,8 @@ def api_post():
             "error": f"최근 24시간 게시 수({posted})가 한도({config.DAILY_POST_LIMIT})에 도달했습니다.",
         }), 429
 
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    results = []
-    for a in targets:
-        try:
-            client = ThreadsClient(a["user_id"], a["access_token"])
-            post_id = client.post_media(text, image_urls=image_urls, video_url=video_url)
-            results.append({"label": a["label"], "ok": True, "post_id": post_id})
-            with LOG_PATH.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "time": datetime.now().isoformat(timespec="seconds"),
-                    "account": a["label"],
-                    "topic": data.get("topic"),
-                    "text": text,
-                    "post_id": post_id,
-                    "image_urls": image_urls,
-                    "video_url": video_url,
-                }, ensure_ascii=False) + "\n")
-        except ThreadsError as exc:
-            results.append({"label": a["label"], "ok": False, "error": str(exc)})
-        except Exception as exc:  # noqa: BLE001
-            results.append({"label": a["label"], "ok": False, "error": str(exc)})
-
+    results = _publish(text, image_urls, video_url, targets, data.get("topic"))
     success = sum(1 for r in results if r["ok"])
-    # 학습: 게시 성공한 '계정별'로 그 글을 학습 예시에 저장 (계정마다 톤 따로 쌓임)
-    if success > 0:
-        try:
-            from threads_auto import samples
-            for a, r in zip(targets, results):
-                if r.get("ok"):
-                    samples.add_sample(a["id"], text)
-        except Exception:  # noqa: BLE001
-            pass
     return jsonify({"ok": success > 0, "results": results,
                     "summary": f"{success}/{len(results)} 계정 게시 성공"})
 
@@ -780,6 +789,108 @@ def api_insights_status():
     })
 
 
+# ── 예약 발행 (특정 글을 예약 시각에 자동 게시) ──
+_publish_watcher = {"started": False}
+
+
+def _public_sched_item(it: dict) -> dict:
+    """UI용: 계정 라벨 붙이고 토큰 등 불필요 정보 제외."""
+    all_accs = {a["id"]: a for a in accounts.list_accounts()}
+    ids = it.get("account_ids") or []
+    labels = [
+        (all_accs[i].get("username") and "@" + all_accs[i]["username"])
+        or all_accs[i].get("label", "계정")
+        for i in ids if i in all_accs
+    ] or ["(전체 계정)"]
+    return {
+        "id": it["id"], "text": it["text"], "run_at": it.get("run_at"),
+        "accounts": labels, "status": it.get("status", "pending"),
+        "result": it.get("result"),
+        "has_media": bool(it.get("image_urls") or it.get("video_url")),
+    }
+
+
+def _scheduled_publish_loop():
+    """예약 시각이 된 글을 자동으로 발행하는 워처."""
+    from threads_auto import scheduled_posts
+    while True:
+        try:
+            for item in scheduled_posts.due():
+                all_accs = accounts.list_accounts()
+                ids = item.get("account_ids") or []
+                targets = [a for a in all_accs if a["id"] in ids] if ids else all_accs
+                if not targets:
+                    scheduled_posts.mark(item["id"], "failed", {"summary": "대상 계정이 없어요."})
+                    continue
+                try:
+                    results = _publish(item["text"], item.get("image_urls") or [],
+                                       item.get("video_url"), targets, item.get("topic"))
+                    success = sum(1 for r in results if r.get("ok"))
+                    scheduled_posts.mark(
+                        item["id"], "done" if success else "failed",
+                        {"summary": f"{success}/{len(results)} 계정 게시", "results": results},
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    scheduled_posts.mark(item["id"], "failed", {"summary": "오류: " + str(exc)})
+        except Exception:  # noqa: BLE001
+            pass
+        for _ in range(30):  # 30초마다 점검
+            time.sleep(1)
+
+
+def _ensure_publish_watcher():
+    if _publish_watcher["started"]:
+        return
+    _publish_watcher["started"] = True
+    threading.Thread(target=_scheduled_publish_loop, daemon=True).start()
+
+
+@app.post("/api/schedule_post")
+def api_schedule_post():
+    """현재 글을 예약 시각에 발행하도록 큐에 추가합니다."""
+    from threads_auto import scheduled_posts
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "예약할 글이 비어 있어요."}), 400
+    if len(text) > 500:
+        return jsonify({"ok": False, "error": f"글이 너무 길어요({len(text)}자)."}), 400
+    run_at = data.get("run_at")
+    if not run_at:
+        return jsonify({"ok": False, "error": "예약 시각을 골라주세요."}), 400
+    run_at = int(run_at)
+    if run_at < int(time.time() * 1000) - 60000:
+        return jsonify({"ok": False, "error": "과거 시각은 예약할 수 없어요."}), 400
+
+    all_accs = accounts.list_accounts()
+    if not all_accs:
+        return jsonify({"ok": False, "error": "등록된 계정이 없어요. '계정' 탭에서 추가하세요."}), 400
+    acc_ids = data.get("account_ids") or []
+    if acc_ids and not any(a["id"] in acc_ids for a in all_accs):
+        return jsonify({"ok": False, "error": "게시할 계정을 선택하세요."}), 400
+
+    image_urls = [u for u in (data.get("image_urls") or []) if u]
+    video_url = (data.get("video_url") or "").strip() or None
+    item = scheduled_posts.add(text, run_at, acc_ids, image_urls, video_url, data.get("topic"))
+    _ensure_publish_watcher()
+    return jsonify({"ok": True, "item": _public_sched_item(item)})
+
+
+@app.get("/api/scheduled")
+def api_scheduled_list():
+    from threads_auto import scheduled_posts
+    return jsonify({"ok": True,
+                    "items": [_public_sched_item(i) for i in scheduled_posts.list_all()]})
+
+
+@app.post("/api/scheduled/delete")
+def api_scheduled_delete():
+    from threads_auto import scheduled_posts
+    data = request.get_json(silent=True) or {}
+    scheduled_posts.delete((data.get("id") or "").strip())
+    return jsonify({"ok": True})
+
+
 @app.get("/api/topics")
 def api_get_topics():
     content = TOPICS_PATH.read_text(encoding="utf-8") if TOPICS_PATH.exists() else ""
@@ -853,4 +964,6 @@ if __name__ == "__main__":
     print("=" * 50)
     # 자동 답글이 켜진 계정이 있으면 시작과 동시에 실시간 추적 시작
     _ensure_auto_reply_watcher()
+    # 예약 발행 워처도 시작(예약해 둔 글이 시간이 되면 자동 발행)
+    _ensure_publish_watcher()
     app.run(host="127.0.0.1", port=port, debug=False)

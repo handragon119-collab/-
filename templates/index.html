@@ -181,6 +181,14 @@
       <div id="postAccounts" class="chips"></div>
 
       <button class="primary" id="postBtn" style="margin-top:14px">🚀 스레드에 게시</button>
+
+      <hr class="divider" />
+      <label>🗓 예약 발행 (이 글을 정한 시각에 자동 게시)</label>
+      <div class="row">
+        <input type="datetime-local" id="schedAt" style="flex:1" />
+        <button class="ghost" id="schedPostBtn" style="width:auto;padding:9px 16px;white-space:nowrap">예약</button>
+      </div>
+      <p class="hint">위에 쓴 글·사진·선택한 계정 그대로 예약돼요. ⚠️ 앱(창)이 켜져 있어야 예약 시각에 발행돼요. 예약 목록은 ⏰ 자동 탭에서 볼 수 있어요.</p>
     </div>
   </div>
 
@@ -238,6 +246,11 @@
       </div>
       <p class="hint">현재 계정의 새 댓글에 그 계정 말투로 <b>전부</b> 답글을 달아요(수량 제한 없음, 이미 답한 건 건너뜀).<br>🧑‍💻 사람처럼 댓글마다 <b>읽고·타이핑하는 시간차</b>를 둬서 천천히 진행해요. 백그라운드로 돌고 <b>보고서가 실시간</b>으로 채워져요(창은 켜둬야 해요).<br>⚠️ 토큰에 <b>threads_manage_replies</b> 권한 필요. · 좋아요는 Threads 공식 API 미지원이라 답글로 대체돼요.</p>
       <div id="replyReport" style="margin-top:12px"></div>
+
+      <hr class="divider" />
+      <label>🗓 예약 발행 목록</label>
+      <p class="hint">✍️ 글쓰기 탭에서 글을 쓰고 '예약'을 누르면 여기 쌓여요. 시각이 되면 자동 발행돼요.</p>
+      <div id="scheduledList"><p class="hint">불러오는 중…</p></div>
 
       <hr class="divider" />
       <label>🔁 실시간 자동 답글 (계정별)</label>
@@ -316,7 +329,7 @@ document.querySelectorAll(".tab").forEach((b) => {
     if (b.dataset.tab === "history") loadHistory();
     if (b.dataset.tab === "topics") loadTopics();
     if (b.dataset.tab === "accounts") loadAccounts();
-    if (b.dataset.tab === "schedule") startAutoReplyPoll(); else stopAutoReplyPoll();
+    if (b.dataset.tab === "schedule") { startAutoReplyPoll(); loadScheduled(); } else stopAutoReplyPoll();
   };
 });
 
@@ -532,6 +545,55 @@ $("postBtn").onclick = async () => {
   } catch (e) { toast("오류: " + e, "error"); }
   b.disabled = false; b.textContent = "🚀 스레드에 게시";
 };
+
+// 예약 발행
+$("schedPostBtn").onclick = async () => {
+  const text = $("postText").value.trim();
+  if (!text) return toast("예약할 글이 비어 있어요.", "error");
+  const when = $("schedAt").value;
+  if (!when) return toast("예약 시각을 골라주세요.", "error");
+  const run_at = new Date(when).getTime();
+  if (run_at < Date.now() - 60000) return toast("과거 시각은 예약할 수 없어요.", "error");
+  const ids = SEL_ACCOUNTS ? [...SEL_ACCOUNTS] : [];
+  if (ACCOUNTS.length && ids.length === 0) return toast("게시할 계정을 선택하세요.", "error");
+  const b = $("schedPostBtn"); b.disabled = true;
+  try {
+    const r = await api("/api/schedule_post", { method: "POST", body: JSON.stringify({ text, run_at, image_urls: CUR_IMAGES, video_url: CUR_VIDEO, account_ids: ids, topic: $("topicInput").value || null }) });
+    if (r.ok) {
+      toast("✅ 예약됐어요! (⏰ 자동 탭에서 확인)", "ok");
+      $("postText").value = ""; $("charCount").textContent = 0; $("schedAt").value = "";
+      CUR_IMAGES = []; CUR_VIDEO = null; CUR_PREVIEWS = []; CUR_VIDEO_PREVIEW = null; renderMedia();
+      loadScheduled();
+    } else toast(r.error || "예약 실패", "error");
+  } catch (e) { toast("오류: " + e, "error"); }
+  b.disabled = false;
+};
+function fmtWhen(ms) {
+  if (!ms) return "";
+  const d = new Date(ms), p = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth()+1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+const SCHED_BADGE = { pending: '<span class="badge off">⏳ 예약됨</span>', done: '<span class="badge on">✅ 발행됨</span>', failed: '<span class="badge off" style="color:#ff6b6b">⚠️ 실패</span>' };
+async function loadScheduled() {
+  const box = $("scheduledList");
+  try {
+    const r = await api("/api/scheduled");
+    if (!r.ok || !r.items.length) { box.innerHTML = '<p class="hint">예약된 글이 없어요.</p>'; return; }
+    box.innerHTML = r.items.map((it) => {
+      const badge = SCHED_BADGE[it.status] || it.status;
+      const res = (it.status !== "pending" && it.result && it.result.summary) ? ` <span class="hint" style="margin:0">· ${esc(it.result.summary)}</span>` : "";
+      return `<div class="item">
+        <div class="item-time">${fmtWhen(it.run_at)} · ${esc(it.accounts.join(", "))} ${it.has_media ? "· 🖼" : ""} ${badge}${res}</div>
+        <div class="item-text">${esc(it.text)}</div>
+        <button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
+      </div>`;
+    }).join("");
+    box.querySelectorAll("[data-delsched]").forEach((el) => el.onclick = async () => {
+      await api("/api/scheduled/delete", { method: "POST", body: JSON.stringify({ id: el.dataset.delsched }) });
+      toast("삭제됨", "ok"); loadScheduled();
+    });
+  } catch (e) { box.innerHTML = '<p class="hint">목록을 불러오지 못했어요.</p>'; }
+}
 
 // 주제
 async function loadTopics() { const r = await api("/api/topics"); if (r.ok) $("topicsArea").value = r.content; }
