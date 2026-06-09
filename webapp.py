@@ -12,10 +12,11 @@ from __future__ import annotations
 import json
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 import config
 import random
@@ -27,7 +28,7 @@ from threads_auto.content_generator import (
     load_categorized_topics,
 )
 from threads_auto.threads_client import ThreadsClient, ThreadsError
-from threads_auto.image_generator import ImageError, create_image_url_auto
+from threads_auto.image_generator import ImageError, generate_image
 from threads_auto.pipeline import ThreadsPipeline
 
 
@@ -228,18 +229,16 @@ def api_auto():
         return jsonify({"ok": False, "error": f"글 생성 실패: {exc}"}), 500
 
     image_url = None
+    preview_url = None
     image_error = None
     if want_image and config.has_image_support():
         try:
             # 프리미엄 디자인 감성의 이미지 프롬프트
             prompt = pipe.image_prompt(text)
-            image_url = create_image_url_auto(
-                config.OPENAI_API_KEY,
-                config.IMGUR_CLIENT_ID,
-                prompt,
-                model=config.OPENAI_IMAGE_MODEL,
-                size=config.OPENAI_IMAGE_SIZE,
-            )
+            made = _make_ai_image(prompt)
+            preview_url = made["preview_url"]
+            image_url = made["image_url"]
+            image_error = made["image_error"]
         except Exception as exc:  # noqa: BLE001  (사진 실패해도 글은 살림)
             image_error = str(exc)
 
@@ -250,6 +249,7 @@ def api_auto():
             "topic": topic,
             "length": len(text),
             "image_url": image_url,
+            "preview_url": preview_url,
             "image_error": image_error,
             "meta": meta,
         }
@@ -273,14 +273,10 @@ def api_generate_image():
     try:
         pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
         prompt = pipe.image_prompt(text)
-        image_url = create_image_url_auto(
-            config.OPENAI_API_KEY,
-            config.IMGUR_CLIENT_ID,
-            prompt,
-            model=config.OPENAI_IMAGE_MODEL,
-            size=config.OPENAI_IMAGE_SIZE,
-        )
-        return jsonify({"ok": True, "image_url": image_url})
+        made = _make_ai_image(prompt)
+        return jsonify({"ok": True, "image_url": made["image_url"],
+                        "preview_url": made["preview_url"],
+                        "image_error": made["image_error"]})
     except ImageError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 502
     except Exception as exc:  # noqa: BLE001
@@ -304,6 +300,52 @@ def _host_bytes(data: bytes, ext: str) -> str:
     return tunnel_host.host_image(data, ext=ext)
 
 
+# 미리보기용: 생성/업로드한 미디어를 이 앱(Flask)에서 직접 제공합니다.
+# (공개 호스팅 URL은 Threads '게시'에만 필요하고, 브라우저 미리보기에는
+#  로컬 주소가 더 빠르고 확실합니다. 터널/Imgur가 안 떠도 미리보기는 보입니다.)
+IMAGES_DIR = Path("data/images")
+
+
+def _save_preview(data: bytes, ext: str) -> str:
+    """미디어 바이트를 data/images에 저장하고 로컬 미리보기 URL(/media/...)을 반환."""
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    ext = (ext or "png").lstrip(".").lower()
+    if ext not in _MEDIA_TYPES and ext not in _VIDEO_EXTS:
+        ext = "png"
+    name = f"{uuid.uuid4().hex}.{ext}"
+    (IMAGES_DIR / name).write_bytes(data)
+    return f"/media/{name}"
+
+
+@app.get("/media/<path:name>")
+def media_file(name: str):
+    """미리보기용 로컬 미디어 제공."""
+    return send_from_directory(IMAGES_DIR.resolve(), name)
+
+
+def _make_ai_image(prompt: str) -> dict:
+    """AI 이미지를 1번 생성해서 {preview_url, image_url, image_error}를 반환.
+
+    - preview_url: 브라우저 미리보기용(로컬 Flask). 항상 채워짐.
+    - image_url: 게시용 공개 URL. 호스팅(Imgur/터널) 실패 시 None + image_error.
+    """
+    img_bytes = generate_image(
+        config.OPENAI_API_KEY, prompt,
+        model=config.OPENAI_IMAGE_MODEL, size=config.OPENAI_IMAGE_SIZE,
+    )
+    preview_url = _save_preview(img_bytes, "png")
+    image_url, image_error = None, None
+    try:
+        image_url = _host_bytes(img_bytes, "png")
+    except Exception as exc:  # noqa: BLE001 (미리보기는 살리고, 게시용만 실패 처리)
+        image_error = (
+            "사진 미리보기는 됐지만, 게시용 공개주소 만들기에 실패했어요: "
+            + str(exc)
+        )
+    return {"preview_url": preview_url, "image_url": image_url,
+            "image_error": image_error}
+
+
 @app.post("/api/upload_media")
 def api_upload_media():
     """사진 여러 장 또는 동영상 1개를 업로드합니다.
@@ -320,13 +362,16 @@ def api_upload_media():
     first_ext = files[0].filename.rsplit(".", 1)[-1].lower() if "." in files[0].filename else ""
     is_video = first_ext in _VIDEO_EXTS
 
+    video_preview = None
+    preview_urls: list[str] = []
     try:
         if is_video:
             f = files[0]
             data = f.read()
             if len(data) > 100 * 1024 * 1024:
                 return jsonify({"ok": False, "error": "영상이 너무 큽니다(100MB 이하)."}), 400
-            video_url = _host_bytes(data, first_ext)
+            video_preview = _save_preview(data, first_ext)  # 미리보기(로컬)
+            video_url = _host_bytes(data, first_ext)        # 게시용(공개)
             image_urls = []
             # 영상 분석용 프레임 추출 → 보관(글쓰기용)
             frames = []
@@ -348,7 +393,8 @@ def api_upload_media():
                 if len(data) > 8 * 1024 * 1024:
                     return jsonify({"ok": False, "error": f"{f.filename}: 8MB 이하만 가능."}), 400
                 ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else "png"
-                image_urls.append(_host_bytes(data, ext))
+                preview_urls.append(_save_preview(data, ext))  # 미리보기(로컬)
+                image_urls.append(_host_bytes(data, ext))       # 게시용(공개)
                 frames.append((data, _MEDIA_TYPES.get(ext, "image/png")))
     except Exception as exc:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"업로드 실패: {exc}"}), 500
@@ -375,6 +421,7 @@ def api_upload_media():
 
     return jsonify({
         "ok": True, "image_urls": image_urls, "video_url": video_url,
+        "preview_urls": preview_urls, "video_preview": video_preview,
         "text": text, "text_error": text_error,
     })
 

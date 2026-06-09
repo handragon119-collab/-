@@ -88,6 +88,7 @@
   #mediaWrap { margin-top: 14px; }
   .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .media-grid img, .media-grid video { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
+  .imgfail { width:100%; aspect-ratio:1; display:flex; align-items:center; justify-content:center; text-align:center; font-size:12px; color:var(--muted); background:var(--card2); border-radius:12px; border:1px dashed var(--line); padding:8px; }
   #videoPrev { width: 100%; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 8px; max-height: 320px; }
 
   .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
@@ -278,22 +279,32 @@ async function api(path, opts) {
 }
 
 // 미디어 상태
-let CUR_IMAGES = [];   // 공개 URL 배열
-let CUR_VIDEO = null;  // 공개 URL
+let CUR_IMAGES = [];      // 게시용 공개 URL 배열
+let CUR_VIDEO = null;     // 게시용 공개 URL
+let CUR_PREVIEWS = [];    // 미리보기용(로컬) URL 배열
+let CUR_VIDEO_PREVIEW = null; // 미리보기용(로컬) 영상 URL
+// 미리보기는 로컬 주소 우선, 없으면 공개 URL로 폴백
+const previewFor = (i) => CUR_PREVIEWS[i] || CUR_IMAGES[i];
 function renderMedia() {
   const wrap = $("mediaWrap"), grid = $("imgGrid"), vid = $("videoPrev");
-  if (CUR_VIDEO) {
-    vid.src = CUR_VIDEO; vid.style.display = "block"; grid.innerHTML = "";
+  if (CUR_VIDEO || CUR_VIDEO_PREVIEW) {
+    vid.src = CUR_VIDEO_PREVIEW || CUR_VIDEO; vid.style.display = "block"; grid.innerHTML = "";
     wrap.style.display = "block";
-  } else if (CUR_IMAGES.length) {
+  } else if (CUR_IMAGES.length || CUR_PREVIEWS.length) {
     vid.style.display = "none";
-    grid.innerHTML = CUR_IMAGES.map((u) => `<img src="${u}">`).join("");
+    const n = Math.max(CUR_IMAGES.length, CUR_PREVIEWS.length);
+    let html = "";
+    for (let i = 0; i < n; i++) {
+      const u = previewFor(i);
+      html += `<img src="${u}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'imgfail',textContent:'⚠️ 사진을 불러오지 못했어요'}))">`;
+    }
+    grid.innerHTML = html;
     wrap.style.display = "block";
   } else {
     wrap.style.display = "none"; vid.style.display = "none"; grid.innerHTML = "";
   }
 }
-$("clearMediaBtn").onclick = () => { CUR_IMAGES = []; CUR_VIDEO = null; renderMedia(); };
+$("clearMediaBtn").onclick = () => { CUR_IMAGES = []; CUR_VIDEO = null; CUR_PREVIEWS = []; CUR_VIDEO_PREVIEW = null; renderMedia(); };
 
 // 탭
 document.querySelectorAll(".tab").forEach((b) => {
@@ -458,7 +469,9 @@ $("fileInput").onchange = async (e) => {
     const resp = await fetch("/api/upload_media", { method: "POST", body: fd });
     const j = await resp.json();
     if (j.ok) {
-      CUR_IMAGES = j.image_urls || []; CUR_VIDEO = j.video_url || null; renderMedia();
+      CUR_IMAGES = j.image_urls || []; CUR_VIDEO = j.video_url || null;
+      CUR_PREVIEWS = j.preview_urls || []; CUR_VIDEO_PREVIEW = j.video_preview || null;
+      renderMedia();
       if (j.text) { $("postText").value = j.text; $("charCount").textContent = j.text.length; }
       if (j.text_error) toast("미디어는 올렸지만 글 작성 실패: " + j.text_error, "error");
       else toast(writing ? "미디어 보고 글까지 썼어요!" : "미디어를 올렸어요.", "ok");
@@ -470,16 +483,22 @@ $("fileInput").onchange = async (e) => {
 // 자동 생성 (글 + AI 사진)
 $("autoBtn").onclick = async () => {
   const b = $("autoBtn"); b.disabled = true; b.innerHTML = '<span class="spin"></span>리서치·작성·사진 중… (40~80초)';
-  CUR_IMAGES = []; CUR_VIDEO = null; renderMedia();
+  CUR_IMAGES = []; CUR_VIDEO = null; CUR_PREVIEWS = []; CUR_VIDEO_PREVIEW = null; renderMedia();
   try {
     const r = await api("/api/auto", { method: "POST", body: JSON.stringify({ category: SEL_CAT, topic: $("topicInput").value, with_image: true }) });
     if (r.ok) {
       $("postText").value = r.text; $("charCount").textContent = r.text.length;
       if (r.topic) $("topicInput").value = r.topic;
-      if (r.image_url) { CUR_IMAGES = [r.image_url]; renderMedia(); toast("글과 사진 완성!", "ok"); }
+      if (r.preview_url || r.image_url) {
+        CUR_PREVIEWS = [r.preview_url || r.image_url];
+        CUR_IMAGES = r.image_url ? [r.image_url] : [];
+        renderMedia();
+        if (r.image_url) toast("글과 사진 완성!", "ok");
+        else toast("사진은 보이지만 게시용 주소 생성 실패 — " + (r.image_error || ""), "error");
+      }
       else if (r.image_error) toast("글은 됐지만 사진 실패: " + r.image_error, "error");
       else toast("글 생성 완료 (사진은 건너뜀)", "ok");
-      (CUR_IMAGES.length ? $("mediaWrap") : $("postText")).scrollIntoView({ behavior: "smooth", block: "center" });
+      (CUR_PREVIEWS.length ? $("mediaWrap") : $("postText")).scrollIntoView({ behavior: "smooth", block: "center" });
     } else toast(r.error || "실패", "error");
   } catch (e) { toast("오류: " + e, "error"); }
   b.disabled = false; b.textContent = "🎲 글 + 사진 한 번에 자동 생성";
