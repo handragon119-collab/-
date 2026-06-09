@@ -912,14 +912,16 @@ def api_schedule_autofill():
     days = max(1, min(30, int(data.get("days", 10))))
     time_str = (data.get("time") or "21:00").strip()
     category = (data.get("category") or "").strip() or None
+    auto_time = bool(data.get("auto_time", False))  # AI가 글 읽고 시간 정하기
     try:
         hh, mm = (int(x) for x in time_str.split(":")[:2])
     except Exception:  # noqa: BLE001
         hh, mm = 21, 0
 
-    from datetime import timedelta
+    from datetime import timedelta, datetime as _dt, time as _time
     from threads_auto.content_generator import load_categorized_topics
     from threads_auto import samples, scheduled_posts
+    from threads_auto.pipeline import parse_hhmm
 
     persona = acc.get("persona", "general")
     examples = samples.get_samples(acc["id"], persona, limit=10)
@@ -930,18 +932,13 @@ def api_schedule_autofill():
         [t for items in cats.values() for t in items]
     random.shuffle(pool)
 
-    # 발행 시각: 오늘 그 시각이 지났으면 내일부터 하루 간격
-    now = datetime.now()
-    base = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-    if base <= now + timedelta(minutes=2):
-        base = base + timedelta(days=1)
-    slots = [base + timedelta(days=i) for i in range(days)]
-
     _autofill_job.update(running=True, done=0, total=days, scheduled=0, error="")
 
     def work():
         try:
-            for i, slot in enumerate(slots):
+            now = datetime.now()
+            day_cursor = now.date()  # 하루에 하나씩 배치할 날짜 커서
+            for i in range(days):
                 topic = pool[i % len(pool)] if pool else "오늘의 이야기"
                 try:
                     res = pipe.run(topic, persona=persona, examples=examples,
@@ -950,9 +947,19 @@ def api_schedule_autofill():
                 except Exception:  # noqa: BLE001 (한 개 실패해도 계속)
                     text = ""
                 if text:
+                    # 시각: AI 자동(글 내용 기반) 또는 사용자가 고른 고정 시각
+                    if auto_time:
+                        ph, pm = pipe.suggest_time(text)
+                    else:
+                        ph, pm = hh, mm
+                    slot = _dt.combine(day_cursor, _time(ph, pm))
+                    if slot <= now + timedelta(minutes=2):
+                        day_cursor = day_cursor + timedelta(days=1)
+                        slot = _dt.combine(day_cursor, _time(ph, pm))
                     scheduled_posts.add(text, int(slot.timestamp() * 1000),
                                         [acc["id"]], topic=topic)
                     _autofill_job["scheduled"] += 1
+                day_cursor = day_cursor + timedelta(days=1)  # 다음 글은 다음 날
                 _autofill_job["done"] = i + 1
             _ensure_publish_watcher()
         except Exception as exc:  # noqa: BLE001
@@ -969,6 +976,25 @@ def api_schedule_autofill_status():
     return jsonify({"ok": True, "running": _autofill_job["running"],
                     "done": _autofill_job["done"], "total": _autofill_job["total"],
                     "scheduled": _autofill_job["scheduled"], "error": _autofill_job["error"]})
+
+
+@app.post("/api/suggest_time")
+def api_suggest_time():
+    """글 내용을 AI가 읽고 어울리는 발행 시각(HH:MM)을 추천합니다."""
+    try:
+        config.require_anthropic()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "글이 비어 있어요."}), 400
+    try:
+        pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+        h, m = pipe.suggest_time(text)
+        return jsonify({"ok": True, "time": f"{h:02d}:{m:02d}"})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.get("/api/topics")

@@ -230,6 +230,21 @@ def _extract_json(text: str) -> dict:
         return {}
 
 
+def parse_hhmm(s: str, default: tuple[int, int] = (21, 0)) -> tuple[int, int]:
+    """'HH:MM'/'21시' 같은 문자열에서 (시, 분)을 안전하게 뽑습니다."""
+    m = re.search(r"([0-2]?\d)\s*[:시]\s*([0-5]?\d)", s or "")
+    if m:
+        h, mm = int(m.group(1)), int(m.group(2))
+        if 0 <= h <= 23 and 0 <= mm <= 59:
+            return h, mm
+    m = re.search(r"\b([0-2]?\d)\b", s or "")
+    if m:
+        h = int(m.group(1))
+        if 0 <= h <= 23:
+            return h, 0
+    return default
+
+
 class ThreadsPipeline:
     def __init__(self, api_key: str, model: str):
         self.client = anthropic.Anthropic(api_key=api_key)
@@ -480,6 +495,24 @@ class ThreadsPipeline:
             f"Apply this art direction strictly: {DESIGN_GUIDE}\n\nPost:\n{post_text}"
         )
         return self._complete(system, user, max_tokens=400)
+
+    def suggest_time(self, post_text: str) -> tuple[int, int]:
+        """글을 읽고 '언제 올리면 반응이 좋을지' 시각(시, 분)을 정합니다."""
+        system = (
+            "너는 한국 Threads 콘텐츠 타이밍 전문가다. 게시글을 읽고 '하루 중 언제 "
+            "올리면 가장 자연스럽고 반응이 좋을지' 시각 하나를 정한다.\n"
+            "[기준]\n"
+            "1) 글에 시간대 단서가 있으면 그 시간에 맞춰라.\n"
+            "   - '새벽/이 시간/밤샘/출근' → 새벽~아침(05:00~07:30)\n"
+            "   - '점심/밥' → 12:00~13:00\n"
+            "   - '퇴근/저녁' → 18:00~19:30\n"
+            "   - '자기 전/오늘 하루/밤' → 22:00~23:30\n"
+            "2) 단서가 없으면 한국 스레드 피크타임에서 골라라: "
+            "   아침 07:30~08:30, 점심 12:00~13:00, 저녁 20:00~22:00(특히 21시 전후).\n"
+            "출력은 'HH:MM' 24시간 형식 하나만. 설명·다른 말 절대 금지."
+        )
+        out = self._complete(system, f"게시글:\n{post_text}", max_tokens=20)
+        return parse_hhmm(out)
 
     # ── 전체 실행 ──
     def run(self, topic: str, persona: str = "general",
