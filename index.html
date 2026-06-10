@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>🍎 과일 받기</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #1a1a2e;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  #game { display: block; width: 100%; height: 100%; }
+  #overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(15, 15, 35, 0.85);
+    color: #fff; text-align: center;
+    gap: 16px; padding: 24px;
+  }
+  #overlay h1 { font-size: 44px; }
+  #overlay p { font-size: 17px; line-height: 1.6; color: #c5c5d8; }
+  #overlay .score-line { font-size: 22px; color: #ffd166; }
+  #startBtn {
+    font-size: 22px; font-weight: 700;
+    padding: 16px 48px;
+    border: none; border-radius: 50px;
+    background: linear-gradient(135deg, #ff6b6b, #ffa502);
+    color: #fff;
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+    cursor: pointer;
+  }
+  #startBtn:active { transform: scale(0.95); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="overlay">
+  <h1>🍎 과일 받기</h1>
+  <p id="message">손가락으로 바구니를 움직여<br>떨어지는 과일을 받으세요!<br>💣 폭탄은 피하고, ❤️ 목숨은 3개!</p>
+  <div id="finalScore" class="score-line hidden"></div>
+  <button id="startBtn">게임 시작</button>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const message = document.getElementById('message');
+  const finalScore = document.getElementById('finalScore');
+
+  let W, H, dpr;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const FRUITS = ['🍎', '🍊', '🍇', '🍓', '🍌', '🍑', '🍐'];
+  const BOMB = '💣';
+  const GOLD = '⭐';
+
+  let state = 'menu';
+  let basket, items, particles, score, lives, best, spawnTimer, elapsed, lastTime, shake;
+  best = +(localStorage.getItem('fruitBest') || 0);
+
+  function reset() {
+    basket = { x: W / 2, w: Math.min(W * 0.22, 110), y: 0 };
+    items = [];
+    particles = [];
+    score = 0;
+    lives = 3;
+    spawnTimer = 0;
+    elapsed = 0;
+    shake = 0;
+  }
+
+  // 난이도: 시간이 지날수록 빨라지고 자주 떨어짐
+  function difficulty() {
+    const t = Math.min(elapsed / 60, 1); // 60초에 걸쳐 최대 난이도
+    return {
+      interval: 1.0 - t * 0.62,          // 스폰 간격 1.0s → 0.38s
+      speed: H * (0.28 + t * 0.34),      // 낙하 속도
+      bombChance: 0.12 + t * 0.13,
+    };
+  }
+
+  function spawn() {
+    const d = difficulty();
+    const r = Math.random();
+    let type, emoji;
+    if (r < d.bombChance) { type = 'bomb'; emoji = BOMB; }
+    else if (r < d.bombChance + 0.06) { type = 'gold'; emoji = GOLD; }
+    else { type = 'fruit'; emoji = FRUITS[(Math.random() * FRUITS.length) | 0]; }
+    const size = Math.min(W, H) * 0.055 + 14;
+    items.push({
+      type, emoji, size,
+      x: size + Math.random() * (W - size * 2),
+      y: -size,
+      vy: d.speed * (0.85 + Math.random() * 0.3),
+      rot: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 4,
+    });
+  }
+
+  function burst(x, y, emoji, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 60 + Math.random() * 160;
+      particles.push({
+        x, y, emoji,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 80,
+        life: 0.7,
+        size: 10 + Math.random() * 8,
+      });
+    }
+  }
+
+  // 입력: 터치/마우스 둘 다 지원
+  function moveTo(clientX) {
+    basket.x = Math.max(basket.w / 2, Math.min(W - basket.w / 2, clientX));
+  }
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); moveTo(e.touches[0].clientX); }, { passive: false });
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); moveTo(e.touches[0].clientX); }, { passive: false });
+  canvas.addEventListener('mousemove', e => { if (e.buttons || state === 'play') moveTo(e.clientX); });
+
+  function update(dt) {
+    elapsed += dt;
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawn();
+      spawnTimer = difficulty().interval;
+    }
+
+    basket.y = H - Math.max(H * 0.08, 64);
+    const catchY = basket.y;
+
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      it.y += it.vy * dt;
+      it.rot += it.vr * dt;
+
+      // 바구니에 닿았는지
+      if (it.y + it.size * 0.4 >= catchY && it.y < catchY + 40 &&
+          Math.abs(it.x - basket.x) < basket.w / 2 + it.size * 0.3) {
+        if (it.type === 'bomb') {
+          lives--;
+          shake = 0.35;
+          burst(it.x, catchY, '💥', 10);
+          if (navigator.vibrate) navigator.vibrate(120);
+          if (lives <= 0) { gameOver(); return; }
+        } else {
+          const pts = it.type === 'gold' ? 5 : 1;
+          score += pts;
+          burst(it.x, catchY, it.type === 'gold' ? '✨' : it.emoji, 6);
+          if (navigator.vibrate) navigator.vibrate(15);
+        }
+        items.splice(i, 1);
+        continue;
+      }
+
+      // 바닥에 떨어짐
+      if (it.y > H + it.size) {
+        if (it.type === 'fruit' || it.type === 'gold') {
+          lives--;
+          shake = 0.2;
+          if (navigator.vibrate) navigator.vibrate(60);
+          if (lives <= 0) { gameOver(); return; }
+        }
+        items.splice(i, 1);
+      }
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 500 * dt;
+    }
+
+    if (shake > 0) shake -= dt;
+  }
+
+  function draw() {
+    ctx.save();
+    if (shake > 0) {
+      ctx.translate((Math.random() - 0.5) * shake * 30, (Math.random() - 0.5) * shake * 30);
+    }
+
+    // 배경 그라데이션
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1a1a2e');
+    g.addColorStop(1, '#16213e');
+    ctx.fillStyle = g;
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+
+    // 아이템
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const it of items) {
+      ctx.save();
+      ctx.translate(it.x, it.y);
+      ctx.rotate(it.rot);
+      ctx.font = it.size * 1.6 + 'px serif';
+      ctx.fillText(it.emoji, 0, 0);
+      ctx.restore();
+    }
+
+    // 파티클
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(p.life / 0.7, 0);
+      ctx.font = p.size * 1.6 + 'px serif';
+      ctx.fillText(p.emoji, p.x, p.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // 바구니
+    ctx.font = basket.w * 0.9 + 'px serif';
+    ctx.fillText('🧺', basket.x, basket.y + 14);
+
+    // HUD
+    ctx.textAlign = 'left';
+    ctx.font = '700 24px sans-serif';
+    ctx.fillStyle = '#ffd166';
+    ctx.fillText('점수 ' + score, 16, 36);
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = '#8888aa';
+    ctx.fillText('최고 ' + best, 16, 60);
+    ctx.textAlign = 'right';
+    ctx.font = '22px serif';
+    ctx.fillText('❤️'.repeat(Math.max(lives, 0)), W - 12, 34);
+
+    ctx.restore();
+  }
+
+  function gameOver() {
+    state = 'over';
+    if (score > best) {
+      best = score;
+      localStorage.setItem('fruitBest', best);
+      finalScore.textContent = '🎉 신기록! ' + score + '점';
+    } else {
+      finalScore.textContent = '점수: ' + score + '점 (최고 ' + best + '점)';
+    }
+    message.innerHTML = '게임 오버!';
+    finalScore.classList.remove('hidden');
+    startBtn.textContent = '다시 하기';
+    overlay.classList.remove('hidden');
+  }
+
+  function loop(t) {
+    requestAnimationFrame(loop);
+    const dt = Math.min((t - lastTime) / 1000 || 0, 0.05);
+    lastTime = t;
+    if (state === 'play') {
+      update(dt);
+      draw();
+    }
+  }
+
+  startBtn.addEventListener('click', () => {
+    reset();
+    state = 'play';
+    overlay.classList.add('hidden');
+    lastTime = performance.now();
+  });
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
