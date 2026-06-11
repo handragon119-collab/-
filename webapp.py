@@ -894,8 +894,14 @@ def api_scheduled_list():
     각 예약은 account_ids로 어느 계정에 걸렸는지 안다. 계정을 전환하면
     그 계정 대상 예약만 뜨도록 필터한다. (대상 계정이 비어있는 옛 예약은
     어느 계정에서나 보이도록 둔다.)
+    목록을 열 때 prepared_posts.json의 미예약 글이 있으면 자동으로 걸어준다.
     """
-    from threads_auto import scheduled_posts
+    from threads_auto import prepared, scheduled_posts
+    imported = []
+    try:
+        imported = prepared.import_pending()
+    except Exception:  # noqa: BLE001 (자동 임포트 실패해도 목록은 보여줌)
+        pass
     active = accounts.get_active()
     active_id = active.get("id") if active else None
     active_label = None
@@ -908,7 +914,8 @@ def api_scheduled_list():
         if (active_id is None) or (active_id in ids) or (not ids):
             items.append(_public_sched_item(i))
     return jsonify({"ok": True, "items": items,
-                    "active_id": active_id, "active_label": active_label})
+                    "active_id": active_id, "active_label": active_label,
+                    "imported": imported})
 
 
 @app.post("/api/scheduled/delete")
@@ -1165,6 +1172,16 @@ if __name__ == "__main__":
     print("=" * 50)
     # 자동 답글이 켜진 계정이 있으면 시작과 동시에 실시간 추적 시작
     _ensure_auto_reply_watcher()
+    # 미리 준비된 글(prepared_posts.json)이 있으면 자동으로 예약 큐에 등록
+    try:
+        from threads_auto import prepared
+        for r in prepared.import_pending():
+            if r.get("ok"):
+                print(f"  📌 자동 예약: @{r.get('username') or r.get('account')} → {r['run_at']}")
+            else:
+                print(f"  ⚠️ 자동 예약 실패({r.get('id')}): {r.get('error')}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠️ 준비된 글 자동 예약 오류: {exc}")
     # 예약 발행 워처도 시작(예약해 둔 글이 시간이 되면 자동 발행)
     _ensure_publish_watcher()
     app.run(host="127.0.0.1", port=port, debug=False)

@@ -673,6 +673,10 @@ async function loadScheduled() {
   const box = $("scheduledList");
   try {
     const r = await api("/api/scheduled");
+    (r.imported || []).forEach((im) => {
+      if (im.ok) toast(`📌 준비된 글 자동 예약: @${im.username || im.account} → ${im.run_at}`, "ok");
+      else toast(im.error || "준비된 글 예약 실패", "error");
+    });
     const head = r.active_label ? `<p class="hint" style="margin:0 0 8px"><b>${esc(r.active_label)}</b> 계정의 예약만 보는 중 (계정 탭에서 전환하면 바뀌어요)</p>` : "";
     if (!r.ok || !r.items.length) { box.innerHTML = head + '<p class="hint">이 계정엔 예약된 글이 없어요.</p>'; return; }
     box.innerHTML = head + r.items.map((it) => {
