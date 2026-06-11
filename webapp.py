@@ -908,10 +908,11 @@ def api_scheduled_list():
     if active:
         active_label = (active.get("username") and "@" + active["username"]) \
             or active.get("label", "계정")
+    show_all = request.args.get("all") == "1"
     items = []
     for i in scheduled_posts.list_all():
         ids = i.get("account_ids") or []
-        if (active_id is None) or (active_id in ids) or (not ids):
+        if show_all or (active_id is None) or (active_id in ids) or (not ids):
             items.append(_public_sched_item(i))
     return jsonify({"ok": True, "items": items,
                     "active_id": active_id, "active_label": active_label,

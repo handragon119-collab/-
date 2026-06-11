@@ -269,6 +269,9 @@
       <hr class="divider" />
       <label>🗓 예약 발행 목록</label>
       <p class="hint">✍️ 글쓰기 탭에서 글을 쓰고 '예약'을 누르면 여기 쌓여요. 시각이 되면 자동 발행돼요.</p>
+      <label class="hint" style="display:flex;align-items:center;gap:6px;margin:0 0 8px;cursor:pointer">
+        <input type="checkbox" id="schedShowAll" style="width:auto" /> 전체 계정 예약 모두 보기
+      </label>
       <div id="scheduledList"><p class="hint">불러오는 중…</p></div>
 
       <hr class="divider" />
@@ -672,13 +675,17 @@ const SCHED_BADGE = { pending: '<span class="badge off">⏳ 예약됨</span>', d
 async function loadScheduled() {
   const box = $("scheduledList");
   try {
-    const r = await api("/api/scheduled");
+    const showAll = $("schedShowAll").checked;
+    const r = await api("/api/scheduled" + (showAll ? "?all=1" : ""));
+    let head = "";
     (r.imported || []).forEach((im) => {
       if (im.ok) toast(`📌 준비된 글 자동 예약: @${im.username || im.account} → ${im.run_at}`, "ok");
-      else toast(im.error || "준비된 글 예약 실패", "error");
+      else head += `<div class="rep fail" style="margin:0 0 8px"><div class="lbl">준비된 글 예약 보류</div><div class="cmt">${esc(im.error || "")}</div></div>`;
     });
-    const head = r.active_label ? `<p class="hint" style="margin:0 0 8px"><b>${esc(r.active_label)}</b> 계정의 예약만 보는 중 (계정 탭에서 전환하면 바뀌어요)</p>` : "";
-    if (!r.ok || !r.items.length) { box.innerHTML = head + '<p class="hint">이 계정엔 예약된 글이 없어요.</p>'; return; }
+    head += showAll
+      ? '<p class="hint" style="margin:0 0 8px">모든 계정의 예약을 보는 중</p>'
+      : (r.active_label ? `<p class="hint" style="margin:0 0 8px"><b>${esc(r.active_label)}</b> 계정의 예약만 보는 중 (계정 탭에서 전환하면 자동으로 바뀌어요)</p>` : "");
+    if (!r.ok || !r.items.length) { box.innerHTML = head + '<p class="hint">' + (showAll ? "예약된 글이 없어요." : "이 계정엔 예약된 글이 없어요. 위 '전체 계정 예약 모두 보기'를 켜보세요.") + '</p>'; return; }
     box.innerHTML = head + r.items.map((it) => {
       const badge = SCHED_BADGE[it.status] || it.status;
       const res = (it.status !== "pending" && it.result && it.result.summary) ? ` <span class="hint" style="margin:0">· ${esc(it.result.summary)}</span>` : "";
@@ -697,6 +704,8 @@ async function loadScheduled() {
     box.querySelectorAll("[data-editsched]").forEach((el) => el.onclick = () => beginSchedEdit(el.dataset.editsched));
   } catch (e) { box.innerHTML = '<p class="hint">목록을 불러오지 못했어요.</p>'; }
 }
+
+$("schedShowAll").onchange = loadScheduled;
 
 // 예약 글 인라인 수정: 본문을 textarea로 바꾸고 저장 시 /api/scheduled/edit (비교 학습)
 function beginSchedEdit(id) {

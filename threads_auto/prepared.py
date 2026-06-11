@@ -50,6 +50,12 @@ def import_pending() -> list[dict]:
     done = _imported()
     results: list[dict] = []
     changed = False
+    refreshed = False  # 프로필 새로고침은 한 번만
+
+    def _match(uname: str):
+        return next((a for a in accs
+                     if (a.get("username") or "").lower() == uname
+                     or (uname and uname in (a.get("label") or "").lower())), None)
 
     for e in entries:
         eid = e.get("id")
@@ -60,9 +66,15 @@ def import_pending() -> list[dict]:
         if not uname or not text:
             continue
         # @아이디 우선, 없으면 계정 이름(label)에 포함돼도 인정
-        acc = next((a for a in accs
-                    if (a.get("username") or "").lower() == uname
-                    or (uname and uname in (a.get("label") or "").lower())), None)
+        acc = _match(uname)
+        if not acc and not refreshed:
+            # 등록 직후라 @아이디가 아직 비어있을 수 있음 → 한 번 새로고침 후 재시도
+            refreshed = True
+            try:
+                accs = accounts.refresh_profiles()
+                acc = _match(uname)
+            except Exception:  # noqa: BLE001
+                pass
         if not acc:
             results.append({"id": eid, "ok": False,
                             "error": f"@{uname} 계정을 못 찾았어요. 계정 탭에서 "
