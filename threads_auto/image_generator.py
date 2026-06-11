@@ -15,6 +15,7 @@ import requests
 
 OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+POLLINATIONS_URL = "https://image.pollinations.ai/prompt/"
 IMGUR_UPLOAD_URL = "https://api.imgur.com/3/image"
 
 
@@ -88,6 +89,32 @@ def generate_image_gemini(api_key: str, prompt: str,
             if inline.get("data"):
                 return base64.b64decode(inline["data"])
     raise ImageError(f"제미나이 응답에 이미지가 없습니다: {str(data)[:300]}")
+
+
+def generate_image_pollinations(prompt: str, width: int = 1080, height: int = 1350,
+                                seed: int | None = None,
+                                timeout: int = 180) -> tuple[bytes, str]:
+    """Pollinations(완전 무료, 키 불필요)로 이미지 생성.
+
+    (이미지 바이트, 공개 URL) 튜플을 반환합니다. 반환된 URL 자체가
+    공개적으로 접근 가능해서 별도 호스팅(Imgur/터널) 없이도 게시에 쓸 수 있습니다.
+    """
+    import random
+    from urllib.parse import quote
+
+    if seed is None:
+        seed = random.randint(1, 10_000_000)
+    url = (f"{POLLINATIONS_URL}{quote(prompt[:800])}"
+           f"?width={width}&height={height}&seed={seed}&nologo=true&model=flux")
+    resp = requests.get(url, timeout=timeout,
+                        headers={"User-Agent": "Mozilla/5.0 (threads-auto)"})
+    if resp.status_code >= 400:
+        raise ImageError(f"무료 이미지 생성(Pollinations) 실패 {resp.status_code}: "
+                         f"{resp.text[:200]}")
+    ctype = resp.headers.get("Content-Type", "")
+    if "image" not in ctype or len(resp.content) < 1000:
+        raise ImageError(f"무료 이미지 응답이 이미지가 아닙니다({ctype})")
+    return resp.content, url
 
 
 def generate_image_any(prompt: str, openai_key: str = "", gemini_key: str = "",

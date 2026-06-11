@@ -31,7 +31,9 @@ from threads_auto.content_generator import (
     load_categorized_topics,
 )
 from threads_auto.threads_client import ThreadsClient, ThreadsError
-from threads_auto.image_generator import ImageError, generate_image_any
+from threads_auto.image_generator import (
+    ImageError, generate_image_any, generate_image_pollinations,
+)
 from threads_auto.pipeline import ThreadsPipeline
 
 
@@ -340,12 +342,23 @@ def _make_ai_image(prompt: str) -> dict:
     - preview_url: 브라우저 미리보기용(로컬 Flask). 항상 채워짐.
     - image_url: 게시용 공개 URL. 호스팅(Imgur/터널) 실패 시 None + image_error.
     """
-    img_bytes = generate_image_any(
-        prompt,
-        openai_key=config.OPENAI_API_KEY, gemini_key=config.GEMINI_API_KEY,
-        openai_model=config.OPENAI_IMAGE_MODEL,
-        gemini_model=config.GEMINI_IMAGE_MODEL, size=config.OPENAI_IMAGE_SIZE,
-    )
+    try:
+        img_bytes = generate_image_any(
+            prompt,
+            openai_key=config.OPENAI_API_KEY, gemini_key=config.GEMINI_API_KEY,
+            openai_model=config.OPENAI_IMAGE_MODEL,
+            gemini_model=config.GEMINI_IMAGE_MODEL, size=config.OPENAI_IMAGE_SIZE,
+        )
+    except ImageError as paid_exc:
+        # 유료 백엔드(제미나이/OpenAI) 모두 실패 → 완전 무료 Pollinations 폴백.
+        # 반환 URL 자체가 공개 주소라 호스팅(Imgur/터널)도 필요 없다.
+        try:
+            img_bytes, free_url = generate_image_pollinations(prompt)
+        except Exception as free_exc:  # noqa: BLE001
+            raise ImageError(f"{paid_exc} / 무료 폴백도 실패: {free_exc}") from free_exc
+        preview_url = _save_preview(img_bytes, "jpg")
+        return {"preview_url": preview_url, "image_url": free_url,
+                "image_error": None}
     preview_url = _save_preview(img_bytes, "png")
     image_url, image_error = None, None
     try:
