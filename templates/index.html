@@ -475,7 +475,7 @@ async function loadAccounts() {
   }).join("") : '<p class="hint">아직 계정이 없어요.</p>';
   list.querySelectorAll("[data-active]").forEach((el) => el.onclick = async () => {
     const r2 = await api("/api/accounts/active", { method: "POST", body: JSON.stringify({ id: el.dataset.active }) });
-    if (r2.ok) { SEL_ACCOUNTS = new Set([el.dataset.active]); toast("현재 계정 변경됨", "ok"); loadAccounts(); loadStatus(); }
+    if (r2.ok) { SEL_ACCOUNTS = new Set([el.dataset.active]); toast("현재 계정 변경됨", "ok"); loadAccounts(); loadStatus(); loadScheduled(); }
   });
   list.querySelectorAll("[data-del]").forEach((el) => el.onclick = async () => {
     if (!confirm("이 계정을 삭제할까요?")) return;
@@ -673,8 +673,9 @@ async function loadScheduled() {
   const box = $("scheduledList");
   try {
     const r = await api("/api/scheduled");
-    if (!r.ok || !r.items.length) { box.innerHTML = '<p class="hint">예약된 글이 없어요.</p>'; return; }
-    box.innerHTML = r.items.map((it) => {
+    const head = r.active_label ? `<p class="hint" style="margin:0 0 8px"><b>${esc(r.active_label)}</b> 계정의 예약만 보는 중 (계정 탭에서 전환하면 바뀌어요)</p>` : "";
+    if (!r.ok || !r.items.length) { box.innerHTML = head + '<p class="hint">이 계정엔 예약된 글이 없어요.</p>'; return; }
+    box.innerHTML = head + r.items.map((it) => {
       const badge = SCHED_BADGE[it.status] || it.status;
       const res = (it.status !== "pending" && it.result && it.result.summary) ? ` <span class="hint" style="margin:0">· ${esc(it.result.summary)}</span>` : "";
       const editBtn = it.status === "pending"

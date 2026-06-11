@@ -889,9 +889,26 @@ def api_schedule_post():
 
 @app.get("/api/scheduled")
 def api_scheduled_list():
+    """예약 목록 — 현재 활성 계정의 예약만 보여준다.
+
+    각 예약은 account_ids로 어느 계정에 걸렸는지 안다. 계정을 전환하면
+    그 계정 대상 예약만 뜨도록 필터한다. (대상 계정이 비어있는 옛 예약은
+    어느 계정에서나 보이도록 둔다.)
+    """
     from threads_auto import scheduled_posts
-    return jsonify({"ok": True,
-                    "items": [_public_sched_item(i) for i in scheduled_posts.list_all()]})
+    active = accounts.get_active()
+    active_id = active.get("id") if active else None
+    active_label = None
+    if active:
+        active_label = (active.get("username") and "@" + active["username"]) \
+            or active.get("label", "계정")
+    items = []
+    for i in scheduled_posts.list_all():
+        ids = i.get("account_ids") or []
+        if (active_id is None) or (active_id in ids) or (not ids):
+            items.append(_public_sched_item(i))
+    return jsonify({"ok": True, "items": items,
+                    "active_id": active_id, "active_label": active_label})
 
 
 @app.post("/api/scheduled/delete")
