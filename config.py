@@ -59,6 +59,8 @@ OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
 OPENAI_IMAGE_SIZE = os.getenv("OPENAI_IMAGE_SIZE", "1024x1024").strip()
 # Imgur 익명 업로드용 Client-ID (생성한 이미지를 공개 URL로 호스팅)
 IMGUR_CLIENT_ID = os.getenv("IMGUR_CLIENT_ID", "").strip()
+# Pollinations 무료 토큰 (선택 — enter.pollinations.ai 무료 가입, 제한 완화)
+POLLINATIONS_TOKEN = os.getenv("POLLINATIONS_TOKEN", "").strip()
 
 
 def _tunnel_available() -> bool:

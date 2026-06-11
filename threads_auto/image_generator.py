@@ -92,29 +92,55 @@ def generate_image_gemini(api_key: str, prompt: str,
 
 
 def generate_image_pollinations(prompt: str, width: int = 1080, height: int = 1350,
-                                seed: int | None = None,
-                                timeout: int = 180) -> tuple[bytes, str]:
+                                seed: int | None = None, timeout: int = 180,
+                                token: str = "", retries: int = 5) -> tuple[bytes, str]:
     """Pollinations(완전 무료, 키 불필요)로 이미지 생성.
 
     (이미지 바이트, 공개 URL) 튜플을 반환합니다. 반환된 URL 자체가
     공개적으로 접근 가능해서 별도 호스팅(Imgur/터널) 없이도 게시에 쓸 수 있습니다.
+
+    무료 익명 사용은 'IP당 동시에 1개'만 받아줘서, 붐비면(402/429) 잠깐
+    기다렸다 재시도합니다. enter.pollinations.ai에서 무료 가입하면 받는
+    토큰(POLLINATIONS_TOKEN)을 주면 제한이 크게 풀립니다.
     """
     import random
+    import time as _time
     from urllib.parse import quote
 
     if seed is None:
         seed = random.randint(1, 10_000_000)
     url = (f"{POLLINATIONS_URL}{quote(prompt[:800])}"
            f"?width={width}&height={height}&seed={seed}&nologo=true&model=flux")
-    resp = requests.get(url, timeout=timeout,
-                        headers={"User-Agent": "Mozilla/5.0 (threads-auto)"})
-    if resp.status_code >= 400:
-        raise ImageError(f"무료 이미지 생성(Pollinations) 실패 {resp.status_code}: "
-                         f"{resp.text[:200]}")
-    ctype = resp.headers.get("Content-Type", "")
-    if "image" not in ctype or len(resp.content) < 1000:
-        raise ImageError(f"무료 이미지 응답이 이미지가 아닙니다({ctype})")
-    return resp.content, url
+    headers = {"User-Agent": "Mozilla/5.0 (threads-auto)"}
+    if token:
+        url += f"&token={token}"
+        headers["Authorization"] = f"Bearer {token}"
+
+    last_err = ""
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, timeout=timeout, headers=headers)
+        except requests.RequestException as exc:
+            last_err = str(exc)
+            _time.sleep(10)
+            continue
+        if resp.status_code in (402, 429):  # 무료 줄이 꽉 참 → 기다렸다 재시도
+            last_err = f"{resp.status_code}: {resp.text[:150]}"
+            _time.sleep(15 + attempt * 10)
+            continue
+        if resp.status_code >= 400:
+            raise ImageError(f"무료 이미지 생성(Pollinations) 실패 "
+                             f"{resp.status_code}: {resp.text[:200]}")
+        ctype = resp.headers.get("Content-Type", "")
+        if "image" not in ctype or len(resp.content) < 1000:
+            last_err = f"이미지가 아닌 응답({ctype})"
+            _time.sleep(10)
+            continue
+        return resp.content, url
+    raise ImageError(
+        "무료 이미지 엔진이 계속 붐빕니다. 잠시 후 자동 재시도되거나, "
+        "enter.pollinations.ai에서 무료 가입 후 받은 토큰을 .env에 "
+        f"POLLINATIONS_TOKEN=... 으로 넣으면 제한이 풀립니다. (마지막 오류: {last_err})")
 
 
 def generate_image_any(prompt: str, openai_key: str = "", gemini_key: str = "",

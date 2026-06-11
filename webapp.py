@@ -353,7 +353,8 @@ def _make_ai_image(prompt: str) -> dict:
         # 유료 백엔드(제미나이/OpenAI) 모두 실패 → 완전 무료 Pollinations 폴백.
         # 반환 URL 자체가 공개 주소라 호스팅(Imgur/터널)도 필요 없다.
         try:
-            img_bytes, free_url = generate_image_pollinations(prompt)
+            img_bytes, free_url = generate_image_pollinations(
+                prompt, token=config.POLLINATIONS_TOKEN)
         except Exception as free_exc:  # noqa: BLE001
             raise ImageError(f"{paid_exc} / 무료 폴백도 실패: {free_exc}") from free_exc
         preview_url = _save_preview(img_bytes, "jpg")
@@ -939,7 +940,9 @@ def _prepared_media_backfill() -> None:
                     except Exception:  # noqa: BLE001
                         prompts = []
                 urls = []
-                for p in prompts[:3]:
+                for n, p in enumerate(prompts[:3]):
+                    if n:  # 무료 엔진은 동시 요청을 안 받아줘서 사이에 간격을 둠
+                        time.sleep(8)
                     try:
                         r = _make_ai_image(p)
                         if r.get("image_url"):
