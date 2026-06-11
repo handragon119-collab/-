@@ -48,7 +48,10 @@ DUPLICATE_SIMILARITY_THRESHOLD = float(
 DUPLICATE_LOOKBACK = int(os.getenv("DUPLICATE_LOOKBACK", "30"))
 
 # ===== 이미지 자동 생성 (선택) =====
-# OpenAI 이미지 생성 API 키 (Claude는 이미지 생성 불가 → 별도 서비스)
+# 구글 제미나이 이미지 생성 키 (aistudio.google.com에서 무료 발급, 우선 사용)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", "")).strip()
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image").strip()
+# OpenAI 이미지 생성 API 키 (제미나이 없거나 실패 시 폴백)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 # 이미지 생성 모델
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
@@ -71,9 +74,14 @@ def _tunnel_available() -> bool:
 def require_image() -> None:
     """이미지 자동 생성에 필요한 값이 있는지 확인합니다.
 
-    OpenAI 키는 필수. 호스팅은 Imgur 키 또는 cloudflared 터널 중 하나면 됩니다.
+    생성 키(제미나이 또는 OpenAI) 하나는 필수.
+    호스팅은 Imgur 키 또는 cloudflared 터널 중 하나면 됩니다.
     """
-    _require("OPENAI_API_KEY")
+    if not GEMINI_API_KEY and not OPENAI_API_KEY:
+        raise RuntimeError(
+            "이미지 생성 키가 없습니다. .env에 GEMINI_API_KEY(추천, 무료 발급: "
+            "aistudio.google.com) 또는 OPENAI_API_KEY를 넣으세요."
+        )
     if not IMGUR_CLIENT_ID and not _tunnel_available():
         raise RuntimeError(
             "이미지를 올릴 방법이 없습니다. IMGUR_CLIENT_ID를 넣거나 cloudflared를 설치하세요."
@@ -81,8 +89,9 @@ def require_image() -> None:
 
 
 def has_image_support() -> bool:
-    """이미지 생성이 가능한지(OpenAI 키 + 호스팅 수단) 여부."""
-    return bool(OPENAI_API_KEY) and (bool(IMGUR_CLIENT_ID) or _tunnel_available())
+    """이미지 생성이 가능한지(생성 키 + 호스팅 수단) 여부."""
+    return (bool(GEMINI_API_KEY) or bool(OPENAI_API_KEY)) \
+        and (bool(IMGUR_CLIENT_ID) or _tunnel_available())
 
 
 def require_threads() -> None:

@@ -14,6 +14,7 @@ import base64
 import requests
 
 OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 IMGUR_UPLOAD_URL = "https://api.imgur.com/3/image"
 
 
@@ -59,6 +60,58 @@ def generate_image(api_key: str, prompt: str, model: str = "gpt-image-1",
     raise ImageError(f"이미지 데이터를 찾을 수 없습니다: {resp.text[:300]}")
 
 
+def generate_image_gemini(api_key: str, prompt: str,
+                          model: str = "gemini-2.5-flash-image",
+                          timeout: int = 120) -> bytes:
+    """구글 제미나이 이미지 생성 API로 이미지를 만들어 바이트로 반환합니다.
+
+    키 발급: aistudio.google.com → 'Get API key' (무료 한도 있음)
+    """
+    api_key = (api_key or "").strip()
+    if not api_key:
+        raise ImageError("GEMINI_API_KEY가 비어 있습니다.")
+    resp = requests.post(
+        f"{GEMINI_API_URL}/{model}:generateContent",
+        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+        },
+        timeout=timeout,
+    )
+    if resp.status_code >= 400:
+        raise ImageError(f"제미나이 이미지 생성 실패 {resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    for cand in data.get("candidates", []):
+        for part in (cand.get("content") or {}).get("parts", []):
+            inline = part.get("inlineData") or part.get("inline_data") or {}
+            if inline.get("data"):
+                return base64.b64decode(inline["data"])
+    raise ImageError(f"제미나이 응답에 이미지가 없습니다: {str(data)[:300]}")
+
+
+def generate_image_any(prompt: str, openai_key: str = "", gemini_key: str = "",
+                       openai_model: str = "gpt-image-1",
+                       gemini_model: str = "gemini-2.5-flash-image",
+                       size: str = "1024x1024") -> bytes:
+    """가능한 백엔드로 이미지 생성. 제미나이 우선, 실패하면 OpenAI 폴백."""
+    errors = []
+    if gemini_key:
+        try:
+            return generate_image_gemini(gemini_key, prompt, model=gemini_model)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"제미나이: {exc}")
+    if openai_key:
+        try:
+            return generate_image(openai_key, prompt, model=openai_model, size=size)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"OpenAI: {exc}")
+    if errors:
+        raise ImageError(" / ".join(errors))
+    raise ImageError("이미지 생성 키가 없습니다. .env에 GEMINI_API_KEY(추천) "
+                     "또는 OPENAI_API_KEY를 넣으세요.")
+
+
 def upload_to_imgur(client_id: str, image_bytes: bytes, timeout: int = 60) -> str:
     """이미지를 Imgur에 익명 업로드하고 공개 URL을 반환합니다."""
     b64 = base64.standard_b64encode(image_bytes).decode("ascii")
@@ -84,12 +137,16 @@ def create_image_url(openai_key: str, imgur_client_id: str, prompt: str,
 
 
 def create_image_url_auto(openai_key: str, imgur_client_id: str, prompt: str,
-                          model: str = "gpt-image-1", size: str = "1024x1024") -> str:
-    """프롬프트 → AI 이미지 생성 → (Imgur 또는 cloudflared 터널) 호스팅 → 공개 URL.
+                          model: str = "gpt-image-1", size: str = "1024x1024",
+                          gemini_key: str = "",
+                          gemini_model: str = "gemini-2.5-flash-image") -> str:
+    """프롬프트 → AI 이미지 생성(제미나이 우선) → (Imgur 또는 터널) 호스팅 → 공개 URL.
 
     Imgur Client-ID가 있으면 Imgur를 쓰고, 없으면 cloudflared 터널로 직접 호스팅합니다.
     """
-    image_bytes = generate_image(openai_key, prompt, model=model, size=size)
+    image_bytes = generate_image_any(prompt, openai_key=openai_key,
+                                     gemini_key=gemini_key, openai_model=model,
+                                     gemini_model=gemini_model, size=size)
     if imgur_client_id:
         return upload_to_imgur(imgur_client_id, image_bytes)
 

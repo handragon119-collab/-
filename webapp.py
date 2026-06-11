@@ -31,7 +31,7 @@ from threads_auto.content_generator import (
     load_categorized_topics,
 )
 from threads_auto.threads_client import ThreadsClient, ThreadsError
-from threads_auto.image_generator import ImageError, generate_image
+from threads_auto.image_generator import ImageError, generate_image_any
 from threads_auto.pipeline import ThreadsPipeline
 
 
@@ -340,9 +340,11 @@ def _make_ai_image(prompt: str) -> dict:
     - preview_url: 브라우저 미리보기용(로컬 Flask). 항상 채워짐.
     - image_url: 게시용 공개 URL. 호스팅(Imgur/터널) 실패 시 None + image_error.
     """
-    img_bytes = generate_image(
-        config.OPENAI_API_KEY, prompt,
-        model=config.OPENAI_IMAGE_MODEL, size=config.OPENAI_IMAGE_SIZE,
+    img_bytes = generate_image_any(
+        prompt,
+        openai_key=config.OPENAI_API_KEY, gemini_key=config.GEMINI_API_KEY,
+        openai_model=config.OPENAI_IMAGE_MODEL,
+        gemini_model=config.GEMINI_IMAGE_MODEL, size=config.OPENAI_IMAGE_SIZE,
     )
     preview_url = _save_preview(img_bytes, "png")
     image_url, image_error = None, None
@@ -894,7 +896,7 @@ _media_backfill = {"running": False}
 
 
 def _prepared_media_backfill() -> None:
-    if _media_backfill["running"] or not config.OPENAI_API_KEY:
+    if _media_backfill["running"] or not (config.OPENAI_API_KEY or config.GEMINI_API_KEY):
         return
     from threads_auto import prepared, scheduled_posts
     try:

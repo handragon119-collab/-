@@ -122,6 +122,8 @@ def run_once(text: str | None = None, dry_run: bool = False,
                     prompt,
                     model=config.OPENAI_IMAGE_MODEL,
                     size=config.OPENAI_IMAGE_SIZE,
+                    gemini_key=config.GEMINI_API_KEY,
+                    gemini_model=config.GEMINI_IMAGE_MODEL,
                 )
                 print(f"  🖼️ 이미지 준비 완료: {image_url}")
             except ImageError as exc:
