@@ -419,11 +419,13 @@ class ThreadsPipeline:
         )
 
     def write_styled(self, topic: str, style_extra: str, examples: list[str],
-                     facts: str = "", edit_lessons: list[dict] | None = None) -> str:
+                     facts: str = "", edit_lessons: list[dict] | None = None,
+                     reach_strategy: str = "") -> str:
         """리서치 없이, 계정 페르소나 문체 + 예시(few-shot)로 곧장 작성합니다."""
         system = STYLE_GUIDE + (style_extra or "")
         user = (
-            f"[이번에 쓸 주제] {topic}\n"
+            (reach_strategy + "\n\n" if reach_strategy else "")
+            + f"[이번에 쓸 주제] {topic}\n"
             + self._examples_block(examples)
             + self._edit_lessons_block(edit_lessons)
             + _facts_block(facts)
@@ -435,7 +437,8 @@ class ThreadsPipeline:
 
     def write(self, topic: str, research: dict, facts: dict,
               style_extra: str = "", examples: list[str] | None = None,
-              info: str = "", edit_lessons: list[dict] | None = None) -> str:
+              info: str = "", edit_lessons: list[dict] | None = None,
+              reach_strategy: str = "") -> str:
         brief = [f"주제: {topic}"]
         if research.get("angle"):
             brief.append(f"차별화 각도: {research['angle']}")
@@ -458,7 +461,8 @@ class ThreadsPipeline:
             brief.append("이 글엔 검증된 사실 데이터가 없으니, 수치·단정적 주장은 쓰지 마라.")
 
         system = STYLE_GUIDE + (style_extra or "")
-        user = ("\n".join(brief) + self._examples_block(examples or [])
+        user = ((reach_strategy + "\n\n" if reach_strategy else "")
+                + "\n".join(brief) + self._examples_block(examples or [])
                 + self._edit_lessons_block(edit_lessons) + _facts_block(info)
                 + "\n\n위 브리프로 스레드 게시글 한 편을 완성해라. 반드시 200자 이내로 짧게.")
         text = self._complete(system, user, max_tokens=800)
@@ -590,7 +594,8 @@ class ThreadsPipeline:
     # ── 전체 실행 ──
     def run(self, topic: str, persona: str = "general",
             examples: list[str] | None = None, category: str = "",
-            edit_lessons: list[dict] | None = None) -> dict:
+            edit_lessons: list[dict] | None = None,
+            reach_strategy: str = "") -> dict:
         """리서치→(팩트)→글쓰기. {text, meta} 반환.
 
         말투가 강한 페르소나(강아지/사장님)나 방향이 있는 카테고리(재테크 등)는
@@ -605,7 +610,8 @@ class ThreadsPipeline:
 
         if combined:
             text = self.write_styled(topic, combined, examples, facts=info,
-                                     edit_lessons=edit_lessons)
+                                     edit_lessons=edit_lessons,
+                                     reach_strategy=reach_strategy)
             return {"text": text, "meta": {"angle": "", "sensitivity": "low",
                                            "sensitivity_note": "", "facts": []}}
 
@@ -614,7 +620,8 @@ class ThreadsPipeline:
         if research.get("needs_facts"):
             facts = self.factcheck(topic, research.get("angle", ""))
         text = self.write(topic, research, facts, style_extra=combined,
-                          examples=examples, info=info, edit_lessons=edit_lessons)
+                          examples=examples, info=info, edit_lessons=edit_lessons,
+                          reach_strategy=reach_strategy)
         return {
             "text": text,
             "meta": {

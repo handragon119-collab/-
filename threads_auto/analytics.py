@@ -67,8 +67,12 @@ def collect(acc: dict, limit: int = 25, on_progress=None) -> dict:
 
 
 def analyze(acc: dict, limit: int = 25, on_progress=None,
-            anthropic_key: str = "", model: str = "") -> dict:
-    """성과를 분석해 요약·추세·베스트/워스트·시간대·진단을 반환합니다."""
+            anthropic_key: str = "", model: str = "", learn: bool = True) -> dict:
+    """성과를 분석해 요약·추세·베스트/워스트·시간대·진단을 반환합니다.
+
+    learn=True이면 '실제로 조회수 잘 나온 글'을 그 계정 학습 예시로 저장하고,
+    잘 나오는 시간대 등을 조회수 전략 노트에 반영한다(다음 글 생성에 즉시 적용).
+    """
     data = collect(acc, limit=limit, on_progress=on_progress)
     rows = data["rows"]
     if not rows:
@@ -152,8 +156,65 @@ def analyze(acc: dict, limit: int = 25, on_progress=None,
         except Exception:  # noqa: BLE001
             diagnosis = ""
 
+    learned = None
+    if learn:
+        try:
+            learned = _learn_winners(acc, rows, summary)
+        except Exception:  # noqa: BLE001
+            learned = None
+
     return {"ok": True, "insights_ok": data["insights_ok"],
-            "summary": summary, "diagnosis": diagnosis}
+            "summary": summary, "diagnosis": diagnosis, "learned": learned}
+
+
+def _learn_winners(acc: dict, rows: list[dict], summary: dict) -> dict:
+    """실제로 조회수 잘 나온 글을 학습 예시로 저장 + 조회수 전략 노트 갱신.
+
+    - '잘 나온 글' = 조회수가 (전체 평균과 최근 평균 중 큰 값) 이상인 글들, 최대 6개.
+      → 이 계정의 학습 예시로 등록해 다음 생성이 '검증된 승자'를 닮게 한다.
+    - 잘 나오는 시간대 + 추세 + 승자 글 첫 줄을 전략 노트로 저장.
+    """
+    from threads_auto import samples, strategy
+
+    acc_id = acc.get("id")
+    if not acc_id:
+        return {"samples": 0}
+
+    ranked_by_views = [r for r in sorted(rows, key=lambda r: r["views"], reverse=True)
+                       if r["views"]]
+    bar = max(summary.get("avg_views", 0), summary.get("recent_avg", 0))
+    winners = [r for r in ranked_by_views if r["views"] >= bar][:6]
+    # 기준이 너무 빡세 1~2개만 잡히면, 그냥 상위 글로 최소 3개는 학습
+    if len(winners) < 3:
+        for r in ranked_by_views[:3]:
+            if r not in winners:
+                winners.append(r)
+
+    n = 0
+    for r in winners:
+        txt = (r.get("text") or "").strip()
+        if len(txt) >= 8:
+            samples.add_sample(acc_id, txt)
+            n += 1
+
+    # 승자 글들의 첫 줄(후킹)만 모아 전략 노트에 박아둠
+    hooks = []
+    for r in winners[:3]:
+        first = (r.get("text") or "").strip().splitlines()[0] if r.get("text") else ""
+        if first:
+            hooks.append(first[:40])
+    best_hours = [h["hour"] for h in summary.get("best_hours", [])]
+
+    note_lines = [
+        f"최근 평균 조회수 {summary.get('recent_avg', 0)} "
+        f"(추세 {summary.get('trend_pct', 0):+}%). 조회수가 떨어지는 중이면 "
+        "아래 '실제로 잘 나온 글'의 첫 줄 후킹·길이·주제 방향을 적극적으로 닮아라.",
+    ]
+    if hooks:
+        note_lines.append("실제로 조회 잘 나온 글의 첫 줄 예: " + " / ".join(f'"{h}"' for h in hooks))
+    strategy.set_note(acc_id, "\n".join(note_lines), best_hours)
+
+    return {"samples": n, "best_hours": best_hours, "winners": len(winners)}
 
 
 def _llm_diagnosis(acc: dict, summary: dict, anthropic_key: str, model: str) -> str:

@@ -835,6 +835,13 @@ function renderInsights(res) {
   const arrow = up ? "▲" : "▼";
   const tcol = up ? "var(--ok)" : "#ff6b6b";
   let html = "";
+  // 학습 결과 배너 — 잘 나온 글을 자동 학습했음을 표시
+  if (res.learned && res.learned.samples) {
+    const hrs = (res.learned.best_hours || []).map(h=>h+"시").join(", ");
+    html += `<div class="item" style="border-left:3px solid var(--accent1,#7c5cff)">
+      <div class="lbl">🧠 조회수 전략 학습 완료</div>
+      <div class="hint" style="margin:6px 0 0">실제로 <b>조회수 잘 나온 글 ${res.learned.samples}개</b>를 학습했어요.${hrs ? " 잘 되는 시간대(<b>"+hrs+"</b>)도 반영했어요." : ""}<br>이제 글을 생성하면 이 '검증된 승자'의 후킹·길이·주제 방향 + 조회수 전략이 자동 적용돼요.</div></div>`;
+  }
   // 추세 카드
   html += `<div class="item"><div class="lbl">📈 조회수 추세 (최근 ${s.count}개 글)</div>
     <div style="font-size:22px;font-weight:800;margin:6px 0">평균 ${nfmt(s.avg_views)}회

@@ -25,6 +25,7 @@ from threads_auto import safety
 from threads_auto import accounts
 from threads_auto import samples
 from threads_auto import scheduled_posts
+from threads_auto import strategy
 from threads_auto.content_generator import (
     ContentGenerator,
     load_categorized_topics,
@@ -175,11 +176,13 @@ def api_generate():
 
     persona, examples, acc_id = _active_persona()
     lessons = samples.get_edit_lessons(acc_id)
+    reach = strategy.get_block(acc_id)
     try:
         if advanced and topic:
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
             result = pipe.run(topic, persona=persona, examples=examples,
-                              category=category, edit_lessons=lessons)
+                              category=category, edit_lessons=lessons,
+                              reach_strategy=reach)
             return jsonify({
                 "ok": True, "text": result["text"], "topic": topic,
                 "length": len(result["text"]), "meta": result["meta"],
@@ -216,12 +219,14 @@ def api_auto():
 
     persona, examples, acc_id = _active_persona()
     lessons = samples.get_edit_lessons(acc_id)
+    reach = strategy.get_block(acc_id)
     pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
     meta = None
     try:
         if advanced and topic:
             result = pipe.run(topic, persona=persona, examples=examples,
-                              category=category, edit_lessons=lessons)
+                              category=category, edit_lessons=lessons,
+                              reach_strategy=reach)
             text = result["text"]
             meta = result["meta"]
         else:
@@ -970,6 +975,7 @@ def api_schedule_autofill():
     persona = acc.get("persona", "general")
     examples = samples.get_samples(acc["id"], persona, limit=10)
     lessons = samples.get_edit_lessons(acc["id"])
+    reach = strategy.get_block(acc["id"])
     pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
 
     cats = load_categorized_topics()
@@ -987,7 +993,8 @@ def api_schedule_autofill():
                 topic = pool[i % len(pool)] if pool else "오늘의 이야기"
                 try:
                     res = pipe.run(topic, persona=persona, examples=examples,
-                                   category=category or "", edit_lessons=lessons)
+                                   category=category or "", edit_lessons=lessons,
+                                   reach_strategy=reach)
                     text = res.get("text", "").strip()
                 except Exception:  # noqa: BLE001 (한 개 실패해도 계속)
                     text = ""
@@ -1053,6 +1060,32 @@ def api_save_topics():
     data = request.get_json(silent=True) or {}
     content = data.get("content", "")
     TOPICS_PATH.write_text(content, encoding="utf-8")
+    return jsonify({"ok": True})
+
+
+@app.get("/api/strategy")
+def api_get_strategy():
+    """현재 계정의 조회수 전략(에버그린 + 학습 노트)을 반환."""
+    acc = accounts.get_active()
+    acc_id = acc.get("id") if acc else None
+    note = strategy.get_note(acc_id)
+    return jsonify({"ok": True, "base": strategy.REACH_STRATEGY,
+                    "note": note.get("note", ""),
+                    "best_hours": note.get("best_hours", []),
+                    "updated": note.get("updated")})
+
+
+@app.post("/api/strategy")
+def api_save_strategy():
+    """계정 조회수 전략 노트를 사용자가 직접 다듬어 저장."""
+    acc = accounts.get_active()
+    acc_id = acc.get("id") if acc else None
+    if not acc_id:
+        return jsonify({"ok": False, "error": "활성 계정이 없어요."}), 400
+    data = request.get_json(silent=True) or {}
+    cur = strategy.get_note(acc_id)
+    strategy.set_note(acc_id, data.get("note", ""),
+                      data.get("best_hours", cur.get("best_hours", [])))
     return jsonify({"ok": True})
 
 
