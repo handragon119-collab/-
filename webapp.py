@@ -834,6 +834,7 @@ def _public_sched_item(it: dict) -> dict:
         "accounts": labels, "status": it.get("status", "pending"),
         "result": it.get("result"),
         "has_media": bool(it.get("image_urls") or it.get("video_url")),
+        "image_urls": it.get("image_urls") or [],  # 목록 미리보기용
     }
 
 

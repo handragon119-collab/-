@@ -691,9 +691,14 @@ async function loadScheduled() {
       const res = (it.status !== "pending" && it.result && it.result.summary) ? ` <span class="hint" style="margin:0">· ${esc(it.result.summary)}</span>` : "";
       const editBtn = it.status === "pending"
         ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-editsched="${it.id}">✏️ 수정</button> ` : "";
+      const thumbs = (it.image_urls && it.image_urls.length)
+        ? '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+          it.image_urls.map((u) => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" loading="lazy" style="height:90px;border-radius:8px;object-fit:cover" /></a>`).join("") +
+          '</div>' : "";
       return `<div class="item" data-itemid="${it.id}">
         <div class="item-time">${fmtWhen(it.run_at)} · ${esc(it.accounts.join(", "))} ${it.has_media ? "· 🖼" : ""} ${badge}${res}</div>
         <div class="item-text" data-itemtext="${it.id}">${esc(it.text)}</div>
+        ${thumbs}
         ${editBtn}<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
       </div>`;
     }).join("");
