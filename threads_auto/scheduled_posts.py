@@ -84,6 +84,21 @@ def update_text(item_id: str, text: str) -> dict | None:
     return None
 
 
+def set_media(item_id: str, image_urls: list[str] | None = None,
+              video_url: str | None = None) -> bool:
+    """발행 전(pending) 예약 글에 미디어를 붙입니다."""
+    items = _load()
+    for i in items:
+        if i.get("id") == item_id and i.get("status") == "pending":
+            if image_urls is not None:
+                i["image_urls"] = image_urls
+            if video_url is not None:
+                i["video_url"] = video_url
+            _save(items)
+            return True
+    return False
+
+
 def due(now_ms: int | None = None) -> list[dict]:
     """발행 시각이 된 pending 항목들."""
     now = now_ms or int(time.time() * 1000)

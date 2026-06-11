@@ -4,20 +4,32 @@
     "username": "pnent_official",
     "topic": "혼자 시작하는 라이브의 막막함",
     "run_at": "2026-06-12 19:00",
-    "text": "라이브 켜는 건 누구나 해.\n문제는 켜고 나서야. 시청자 0명인 화면에 대고 혼자 떠드는 거, 생각보다 빨리 지치거든.\n근데 그 구간을 혼자 안 버텨도 된다는 건 사람들이 잘 몰라.\n우리는 처음부터 옆에서 같이 가는 팀이야. 강남 스튜디오에서.\n궁금하면 DM으로 '라이브'라고만 보내봐."
+    "text": "라이브 켜는 건 누구나 해.\n문제는 켜고 나서야. 시청자 0명인 화면에 대고 혼자 떠드는 거, 생각보다 빨리 지치거든.\n근데 그 구간을 혼자 안 버텨도 된다는 건 사람들이 잘 몰라.\n우리는 처음부터 옆에서 같이 가는 팀이야. 강남 스튜디오에서.\n궁금하면 DM으로 '라이브'라고만 보내봐.",
+    "image_prompts": [
+      "Moody cinematic photo of a young Korean creator alone in a dark bedroom, lit only by a phone ring light, hesitating before starting a livestream, lonely atmosphere, vertical composition, no text, no watermark",
+      "Bright modern livestream studio in Gangnam Seoul, professional ring lights and cameras, warm welcoming team atmosphere, two people laughing while setting up a phone for TikTok live, cinematic interior, vertical, no text"
+    ]
   },
   {
     "id": "pm-2026-06-12",
     "username": "pm_ent2026",
     "topic": "보여줄 무대가 없는 재능",
     "run_at": "2026-06-12 20:00",
-    "text": "끼는 있는데 보여줄 데가 없는 사람이 제일 아까워.\n노래든 수다든 게임이든, 방 안에서만 쓰기엔 아까운 재능이 진짜 많거든.\n틱톡 라이브가 그 무대가 될 수 있어. 근데 혼자 시작하면 길을 한참 돌아가.\n어떻게 시작하는지 궁금하면 DM에 '라이브' 한 마디만 남겨."
+    "text": "끼는 있는데 보여줄 데가 없는 사람이 제일 아까워.\n노래든 수다든 게임이든, 방 안에서만 쓰기엔 아까운 재능이 진짜 많거든.\n틱톡 라이브가 그 무대가 될 수 있어. 근데 혼자 시작하면 길을 한참 돌아가.\n어떻게 시작하는지 궁금하면 DM에 '라이브' 한 마디만 남겨.",
+    "image_prompts": [
+      "Silhouette of a young person singing passionately with headphones in a small bedroom at night, city lights through the window, dreamy cinematic mood, vertical composition, no text, no watermark",
+      "Premium TikTok live stage setup with a microphone and LED mood lighting in a stylish studio, empty stage waiting for a performer, cinematic, vertical, no text"
+    ]
   },
   {
     "id": "moki-2026-06-12",
     "username": "moki_ent",
     "topic": "보는 사람에서 하는 사람으로",
     "run_at": "2026-06-12 21:00",
-    "text": "틱톡 라이브 보다가 '나도 할 수 있을 것 같은데' 싶었던 적 있지?\n근데 그 생각, 대부분 생각으로 끝나.\n해본 사람들은 알아. 보는 거랑 하는 건 완전 다른 재미라는 거.\n혼자 시작하기 막막하면 우리랑 같이 하면 돼.\n궁금하면 DM으로 '라이브'라고 보내봐."
+    "text": "틱톡 라이브 보다가 '나도 할 수 있을 것 같은데' 싶었던 적 있지?\n근데 그 생각, 대부분 생각으로 끝나.\n해본 사람들은 알아. 보는 거랑 하는 건 완전 다른 재미라는 거.\n혼자 시작하기 막막하면 우리랑 같이 하면 돼.\n궁금하면 DM으로 '라이브'라고 보내봐.",
+    "image_prompts": [
+      "POV of hands holding a smartphone watching a colorful livestream in a cozy dark room at night, soft screen glow, cinematic, vertical composition, no text, no watermark",
+      "Confident young Korean creator hosting a lively TikTok livestream in a stylish studio with a ring light, vibrant joyful energy, cinematic photo, vertical, no text"
+    ]
   }
 ]

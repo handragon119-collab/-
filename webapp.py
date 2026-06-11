@@ -887,6 +887,61 @@ def api_schedule_post():
     return jsonify({"ok": True, "item": _public_sched_item(item)})
 
 
+# ── 준비된 글 이미지 자동 첨부 ──
+# 자동 예약된 글(prepared) 중 이미지가 없는 pending 항목에
+# AI 이미지를 만들어 캐러셀(1~2장)로 붙인다. 백그라운드로 동작.
+_media_backfill = {"running": False}
+
+
+def _prepared_media_backfill() -> None:
+    if _media_backfill["running"] or not config.OPENAI_API_KEY:
+        return
+    from threads_auto import prepared, scheduled_posts
+    try:
+        entries = json.loads(prepared.PREPARED_PATH.read_text(encoding="utf-8")) \
+            if prepared.PREPARED_PATH.exists() else []
+    except Exception:  # noqa: BLE001
+        return
+    by_text = {(e.get("text") or "").strip(): e for e in entries}
+    todo = [i for i in scheduled_posts.list_all()
+            if i.get("status") == "pending"
+            and not i.get("image_urls") and not i.get("video_url")
+            and (i.get("text") or "").strip() in by_text]
+    if not todo:
+        return
+    _media_backfill["running"] = True
+
+    def work():
+        try:
+            pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
+            for it in todo:
+                e = by_text[(it.get("text") or "").strip()]
+                prompts = list(e.get("image_prompts") or [])
+                if not prompts:  # 프롬프트가 없으면 글을 보고 AI가 만든다
+                    try:
+                        p = pipe.image_prompt(it["text"])
+                        prompts = [p, p + ", different scene, alternate composition"]
+                    except Exception:  # noqa: BLE001
+                        prompts = []
+                urls = []
+                for p in prompts[:3]:
+                    try:
+                        r = _make_ai_image(p)
+                        if r.get("image_url"):
+                            urls.append(r["image_url"])
+                        elif r.get("image_error"):
+                            print(f"  ⚠️ 이미지 호스팅 실패({it['id']}): {r['image_error']}")
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"  ⚠️ 이미지 생성 실패({it['id']}): {exc}")
+                if urls:
+                    scheduled_posts.set_media(it["id"], image_urls=urls)
+                    print(f"  🖼 예약 글에 이미지 {len(urls)}장 자동 첨부 완료 ({it['id']})")
+        finally:
+            _media_backfill["running"] = False
+
+    threading.Thread(target=work, daemon=True).start()
+
+
 @app.get("/api/scheduled")
 def api_scheduled_list():
     """예약 목록 — 현재 활성 계정의 예약만 보여준다.
@@ -902,6 +957,7 @@ def api_scheduled_list():
         imported = prepared.import_pending()
     except Exception:  # noqa: BLE001 (자동 임포트 실패해도 목록은 보여줌)
         pass
+    _prepared_media_backfill()  # 이미지 없는 자동 예약 글에 AI 이미지 첨부(백그라운드)
     active = accounts.get_active()
     active_id = active.get("id") if active else None
     active_label = None
@@ -1183,6 +1239,8 @@ if __name__ == "__main__":
                 print(f"  ⚠️ 자동 예약 실패({r.get('id')}): {r.get('error')}")
     except Exception as exc:  # noqa: BLE001
         print(f"  ⚠️ 준비된 글 자동 예약 오류: {exc}")
+    # 자동 예약 글에 이미지가 없으면 AI 이미지(캐러셀) 자동 생성·첨부
+    _prepared_media_backfill()
     # 예약 발행 워처도 시작(예약해 둔 글이 시간이 되면 자동 발행)
     _ensure_publish_watcher()
     app.run(host="127.0.0.1", port=port, debug=False)
