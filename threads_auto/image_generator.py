@@ -91,9 +91,9 @@ def generate_image_gemini(api_key: str, prompt: str,
     raise ImageError(f"제미나이 응답에 이미지가 없습니다: {str(data)[:300]}")
 
 
-def generate_image_pollinations(prompt: str, width: int = 1080, height: int = 1350,
-                                seed: int | None = None, timeout: int = 180,
-                                token: str = "", retries: int = 5) -> tuple[bytes, str]:
+def generate_image_pollinations(prompt: str, width: int = 768, height: int = 960,
+                                seed: int | None = None, timeout: int = 90,
+                                token: str = "", retries: int = 3) -> tuple[bytes, str]:
     """Pollinations(완전 무료, 키 불필요)로 이미지 생성.
 
     (이미지 바이트, 공개 URL) 튜플을 반환합니다. 반환된 URL 자체가
@@ -126,7 +126,7 @@ def generate_image_pollinations(prompt: str, width: int = 1080, height: int = 13
             continue
         if resp.status_code in (402, 429):  # 무료 줄이 꽉 참 → 기다렸다 재시도
             last_err = f"{resp.status_code}: {resp.text[:150]}"
-            _time.sleep(15 + attempt * 10)
+            _time.sleep(8 + attempt * 5)
             continue
         if resp.status_code >= 400:
             raise ImageError(f"무료 이미지 생성(Pollinations) 실패 "

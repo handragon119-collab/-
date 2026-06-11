@@ -61,6 +61,8 @@ OPENAI_IMAGE_SIZE = os.getenv("OPENAI_IMAGE_SIZE", "1024x1024").strip()
 IMGUR_CLIENT_ID = os.getenv("IMGUR_CLIENT_ID", "").strip()
 # Pollinations 무료 토큰 (선택 — enter.pollinations.ai 무료 가입, 제한 완화)
 POLLINATIONS_TOKEN = os.getenv("POLLINATIONS_TOKEN", "").strip()
+# 자동 예약 글당 이미지 장수 (1=빠름/기본, 2=캐러셀)
+IMAGES_PER_POST = max(1, min(3, int(os.getenv("IMAGES_PER_POST", "1"))))
 
 
 def _tunnel_available() -> bool:

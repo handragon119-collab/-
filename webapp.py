@@ -931,7 +931,10 @@ def _prepared_media_backfill() -> None:
     def work():
         try:
             pipe = ThreadsPipeline(config.ANTHROPIC_API_KEY, config.CLAUDE_MODEL)
-            for it in todo:
+            total = len(todo)
+            for idx, it in enumerate(todo, 1):
+                first_line = (it.get("text") or "").splitlines()[0][:20]
+                print(f"  🎨 이미지 생성 중 ({idx}/{total}) — \"{first_line}…\"")
                 e = by_text[(it.get("text") or "").strip()]
                 prompts = list(e.get("image_prompts") or [])
                 if not prompts:  # 프롬프트가 없으면 글을 보고 AI가 만든다
@@ -941,9 +944,9 @@ def _prepared_media_backfill() -> None:
                     except Exception:  # noqa: BLE001
                         prompts = []
                 urls = []
-                for n, p in enumerate(prompts[:3]):
+                for n, p in enumerate(prompts[:config.IMAGES_PER_POST]):
                     if n:  # 무료 엔진은 동시 요청을 안 받아줘서 사이에 간격을 둠
-                        time.sleep(8)
+                        time.sleep(4)
                     try:
                         r = _make_ai_image(p)
                         if r.get("image_url"):
@@ -954,7 +957,7 @@ def _prepared_media_backfill() -> None:
                         print(f"  ⚠️ 이미지 생성 실패({it['id']}): {exc}")
                 if urls:
                     scheduled_posts.set_media(it["id"], image_urls=urls)
-                    print(f"  🖼 예약 글에 이미지 {len(urls)}장 자동 첨부 완료 ({it['id']})")
+                    print(f"  🖼 이미지 {len(urls)}장 첨부 완료 ({idx}/{total})")
         finally:
             _media_backfill["running"] = False
 
