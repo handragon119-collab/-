@@ -336,6 +336,15 @@ def media_file(name: str):
     return send_from_directory(IMAGES_DIR.resolve(), name)
 
 
+ASSETS_DIR = Path("assets")
+
+
+@app.get("/assets/<path:name>")
+def asset_file(name: str):
+    """동봉 자산(카드뉴스 등) 제공 — 미리보기용."""
+    return send_from_directory(ASSETS_DIR.resolve(), name)
+
+
 def _make_ai_image(prompt: str) -> dict:
     """AI 이미지를 1번 생성해서 {preview_url, image_url, image_error}를 반환.
 
@@ -833,12 +842,42 @@ def _public_sched_item(it: dict) -> dict:
         "id": it["id"], "text": it["text"], "run_at": it.get("run_at"),
         "accounts": labels, "status": it.get("status", "pending"),
         "result": it.get("result"),
-        "has_media": bool(it.get("image_urls") or it.get("video_url")),
+        "has_media": bool(it.get("image_urls") or it.get("image_files")
+                          or it.get("video_url")),
         "image_urls": it.get("image_urls") or [],  # 게시용 공개 URL
         # 목록 미리보기용 로컬 주소(/media/...). 공개 URL이 죽어도 여기로 보여줌.
         "preview_urls": it.get("preview_urls") or [],
         "video_preview": it.get("video_preview"),
     }
+
+
+def _fresh_image_urls(item: dict) -> list[str]:
+    """발행 직전, 살아있는 공개 이미지 URL 목록을 만든다.
+
+    터널 주소는 앱을 다시 켜면 죽기 때문에, 로컬 파일(image_files 또는
+    /media 미리보기 파일)이 있으면 지금 다시 호스팅해 새 주소를 쓴다.
+    로컬 파일이 없으면 저장된 URL 중 죽은 터널 주소만 걸러서 반환.
+    """
+    paths: list[Path] = [Path(p) for p in (item.get("image_files") or [])]
+    if not paths:
+        for u in (item.get("preview_urls") or []):
+            if u.startswith("/media/"):
+                paths.append(IMAGES_DIR / u.split("/media/", 1)[1])
+            elif u.startswith("/assets/"):
+                paths.append(ASSETS_DIR / u.split("/assets/", 1)[1])
+    urls = []
+    for f in paths:
+        if f.exists():
+            try:
+                urls.append(_host_bytes(f.read_bytes(), f.suffix.lstrip(".").lower() or "png"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"  ⚠️ 발행용 이미지 호스팅 실패({f.name}): {exc}")
+    if urls:
+        return urls
+    from threads_auto import tunnel_host
+    base = getattr(tunnel_host, "_public_base", None)
+    return [u for u in (item.get("image_urls") or [])
+            if "trycloudflare.com" not in u or (base and u.startswith(base))]
 
 
 def _scheduled_publish_loop():
@@ -854,7 +893,7 @@ def _scheduled_publish_loop():
                     scheduled_posts.mark(item["id"], "failed", {"summary": "대상 계정이 없어요."})
                     continue
                 try:
-                    results = _publish(item["text"], item.get("image_urls") or [],
+                    results = _publish(item["text"], _fresh_image_urls(item),
                                        item.get("video_url"), targets, item.get("topic"))
                     success = sum(1 for r in results if r.get("ok"))
                     scheduled_posts.mark(
@@ -911,6 +950,42 @@ def api_schedule_post():
     return jsonify({"ok": True, "item": _public_sched_item(item)})
 
 
+# ── 죽은 이미지 → 동봉 카드뉴스 자동 교체 ──
+# 예약 글에 붙은 터널 주소는 앱을 다시 켜면 죽는다. 글 내용이
+# prepared_posts.json과 일치하면 assets/cardnews/<계정>/ 카드로 갈아끼운다.
+_cardnews_fix = {"done": False}
+
+
+def _attach_cardnews_to_scheduled() -> None:
+    if _cardnews_fix["done"]:
+        return
+    _cardnews_fix["done"] = True
+    from threads_auto import prepared, scheduled_posts
+    try:
+        entries = json.loads(prepared.PREPARED_PATH.read_text(encoding="utf-8")) \
+            if prepared.PREPARED_PATH.exists() else []
+    except Exception:  # noqa: BLE001
+        return
+    by_text = {(e.get("text") or "").strip(): (e.get("username") or "")
+               for e in entries}
+    for it in scheduled_posts.list_all():
+        if it.get("status") != "pending" or it.get("image_files"):
+            continue
+        username = by_text.get((it.get("text") or "").strip())
+        if not username:
+            continue
+        files = sorted((ASSETS_DIR / "cardnews" / username).glob("*.png"))
+        if not files:
+            continue
+        scheduled_posts.set_media(
+            it["id"],
+            image_files=[str(f) for f in files],
+            preview_urls=[f"/assets/cardnews/{username}/{f.name}" for f in files],
+            image_urls=[],  # 죽은 터널 주소 제거 — 발행 때 image_files를 새로 호스팅
+        )
+        print(f"  🃏 카드뉴스 {len(files)}장 자동 첨부: @{username} ({it['id']})")
+
+
 # ── 준비된 글 이미지 자동 첨부 ──
 # 자동 예약된 글(prepared) 중 이미지가 없는 pending 항목에
 # AI 이미지를 만들어 캐러셀(1~2장)로 붙인다. 백그라운드로 동작.
@@ -929,7 +1004,8 @@ def _prepared_media_backfill() -> None:
     by_text = {(e.get("text") or "").strip(): e for e in entries}
     todo = [i for i in scheduled_posts.list_all()
             if i.get("status") == "pending"
-            and not i.get("image_urls") and not i.get("video_url")
+            and not i.get("image_urls") and not i.get("image_files")
+            and not i.get("video_url")
             and (i.get("text") or "").strip() in by_text]
     if not todo:
         return
@@ -989,6 +1065,7 @@ def api_scheduled_list():
         imported = prepared.import_pending()
     except Exception:  # noqa: BLE001 (자동 임포트 실패해도 목록은 보여줌)
         pass
+    _attach_cardnews_to_scheduled()  # 죽은 터널 이미지 → 동봉 카드뉴스로 교체
     _prepared_media_backfill()  # 이미지 없는 자동 예약 글에 AI 이미지 첨부(백그라운드)
     active = accounts.get_active()
     active_id = active.get("id") if active else None
@@ -1293,6 +1370,8 @@ if __name__ == "__main__":
                 print(f"  ⚠️ 자동 예약 실패({r.get('id')}): {r.get('error')}")
     except Exception as exc:  # noqa: BLE001
         print(f"  ⚠️ 준비된 글 자동 예약 오류: {exc}")
+    # 죽은 터널 이미지가 붙은 예약 글은 동봉 카드뉴스로 자동 교체
+    _attach_cardnews_to_scheduled()
     # 자동 예약 글에 이미지가 없으면 AI 이미지(캐러셀) 자동 생성·첨부
     _prepared_media_backfill()
     # 예약 발행 워처도 시작(예약해 둔 글이 시간이 되면 자동 발행)

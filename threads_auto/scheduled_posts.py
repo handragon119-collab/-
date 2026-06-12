@@ -92,8 +92,13 @@ def update_text(item_id: str, text: str) -> dict | None:
 def set_media(item_id: str, image_urls: list[str] | None = None,
               video_url: str | None = None,
               preview_urls: list[str] | None = None,
-              video_preview: str | None = None) -> bool:
-    """발행 전(pending) 예약 글에 미디어를 붙입니다."""
+              video_preview: str | None = None,
+              image_files: list[str] | None = None) -> bool:
+    """발행 전(pending) 예약 글에 미디어를 붙입니다.
+
+    image_files: 로컬 파일 경로 목록. 발행 직전에 새로 호스팅해 쓰므로
+    터널 주소가 바뀌어도 안전하다.
+    """
     items = _load()
     for i in items:
         if i.get("id") == item_id and i.get("status") == "pending":
@@ -101,6 +106,8 @@ def set_media(item_id: str, image_urls: list[str] | None = None,
                 i["image_urls"] = image_urls
             if preview_urls is not None:
                 i["preview_urls"] = preview_urls
+            if image_files is not None:
+                i["image_files"] = image_files
             if video_url is not None:
                 i["video_url"] = video_url
             if video_preview is not None:
