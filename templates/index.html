@@ -123,9 +123,47 @@
   .rep .mine { background:rgba(124,92,255,.12); border-left:3px solid var(--accent1); border-radius:8px; padding:9px 11px; font-size:14px; line-height:1.5; white-space:pre-wrap; }
   .rep .lbl { font-size:11px; color:var(--muted); font-weight:700; }
   .rep.fail { border-color:var(--err); }
+  /* 썸네일(목록): 누르면 캐러셀 라이트박스가 열림 */
+  .thumbs { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .thumb { position:relative; cursor:zoom-in; }
+  .thumb img { height:90px; border-radius:8px; object-fit:cover; display:block; border:1px solid var(--line); }
+  .thumb .imgfail { height:90px; aspect-ratio:auto; min-width:90px; }
+  .thumb.more::after { content:"+"attr(data-more); position:absolute; inset:0; display:flex;
+    align-items:center; justify-content:center; background:rgba(0,0,0,.55); color:#fff;
+    font-weight:800; font-size:18px; border-radius:8px; }
+  /* 라이트박스(좌우 넘김 캐러셀) */
+  .lb { position:fixed; inset:0; z-index:80; background:rgba(0,0,0,.88); display:none;
+    align-items:center; justify-content:center; touch-action:pan-y; }
+  .lb.show { display:flex; }
+  .lb-stage { max-width:92vw; max-height:82vh; display:flex; align-items:center; justify-content:center; }
+  .lb-stage img { max-width:92vw; max-height:82vh; border-radius:12px; object-fit:contain;
+    box-shadow:0 20px 60px rgba(0,0,0,.6); user-select:none; -webkit-user-drag:none; }
+  .lb-stage .imgfail { width:80vw; max-width:420px; height:240px; aspect-ratio:auto; }
+  .lb-nav { position:absolute; top:50%; transform:translateY(-50%); width:52px; height:52px;
+    border-radius:50%; border:none; background:rgba(255,255,255,.14); color:#fff; font-size:26px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; transition:.15s; }
+  .lb-nav:hover { background:rgba(255,255,255,.28); }
+  .lb-prev { left:16px; } .lb-next { right:16px; }
+  .lb-close { position:absolute; top:16px; right:18px; width:42px; height:42px; border-radius:50%;
+    border:none; background:rgba(255,255,255,.14); color:#fff; font-size:22px; cursor:pointer; }
+  .lb-count { position:absolute; top:22px; left:50%; transform:translateX(-50%); color:#fff;
+    font-size:13px; font-weight:700; background:rgba(0,0,0,.4); padding:5px 12px; border-radius:999px; }
+  .lb-dots { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:7px; }
+  .lb-dots b { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.35); cursor:pointer; transition:.15s; }
+  .lb-dots b.on { background:#fff; width:22px; border-radius:999px; }
+  @media (max-width:600px){ .lb-nav{ width:44px; height:44px; font-size:22px; } .lb-prev{left:6px;} .lb-next{right:6px;} }
 </style>
 </head>
 <body>
+<!-- 이미지 캐러셀 라이트박스 (썸네일 클릭 시 좌우로 넘김) -->
+<div class="lb" id="lightbox">
+  <button class="lb-close" id="lbClose" aria-label="닫기">✕</button>
+  <span class="lb-count" id="lbCount"></span>
+  <button class="lb-nav lb-prev" id="lbPrev" aria-label="이전">‹</button>
+  <div class="lb-stage" id="lbStage"></div>
+  <button class="lb-nav lb-next" id="lbNext" aria-label="다음">›</button>
+  <div class="lb-dots" id="lbDots"></div>
+</div>
 <header>
   <h1>🧵 스레드 <span class="dot">오토</span></h1>
   <span id="status">상태 확인 중…</span>
@@ -624,7 +662,7 @@ $("schedPostBtn").onclick = async () => {
   if (ACCOUNTS.length && ids.length === 0) return toast("게시할 계정을 선택하세요.", "error");
   const b = $("schedPostBtn"); b.disabled = true;
   try {
-    const r = await api("/api/schedule_post", { method: "POST", body: JSON.stringify({ text, run_at, image_urls: CUR_IMAGES, video_url: CUR_VIDEO, account_ids: ids, topic: $("topicInput").value || null }) });
+    const r = await api("/api/schedule_post", { method: "POST", body: JSON.stringify({ text, run_at, image_urls: CUR_IMAGES, preview_urls: CUR_PREVIEWS, video_url: CUR_VIDEO, video_preview: CUR_VIDEO_PREVIEW, account_ids: ids, topic: $("topicInput").value || null }) });
     if (r.ok) {
       toast("✅ 예약됐어요! (⏰ 자동 탭에서 확인)", "ok");
       $("postText").value = ""; $("charCount").textContent = 0; $("schedAt").value = "";
@@ -691,9 +729,16 @@ async function loadScheduled() {
       const res = (it.status !== "pending" && it.result && it.result.summary) ? ` <span class="hint" style="margin:0">· ${esc(it.result.summary)}</span>` : "";
       const editBtn = it.status === "pending"
         ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-editsched="${it.id}">✏️ 수정</button> ` : "";
-      const thumbs = (it.image_urls && it.image_urls.length)
-        ? '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
-          it.image_urls.map((u) => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" loading="lazy" style="height:90px;border-radius:8px;object-fit:cover" /></a>`).join("") +
+      // 미리보기는 로컬(/media) 주소 우선 — 공개 URL(터널)이 죽어도 보이게.
+      const pv = it.preview_urls || [], pub = it.image_urls || [];
+      const srcs = []; for (let i = 0; i < Math.max(pv.length, pub.length); i++) { const u = pv[i] || pub[i]; if (u) srcs.push(u); }
+      const MAX_THUMB = 4;
+      const thumbs = srcs.length
+        ? '<div class="thumbs" data-imgs="' + esc(JSON.stringify(srcs)) + '">' +
+          srcs.slice(0, MAX_THUMB).map((u, i) => {
+            const more = (i === MAX_THUMB - 1 && srcs.length > MAX_THUMB);
+            return `<div class="thumb${more ? " more" : ""}"${more ? ` data-more="${srcs.length - MAX_THUMB}"` : ""} data-idx="${i}"><img src="${esc(u)}" loading="lazy" onerror="this.outerHTML='<div class=\\'imgfail\\'>이미지를<br>불러올 수 없어요</div>'" /></div>`;
+          }).join("") +
           '</div>' : "";
       return `<div class="item" data-itemid="${it.id}">
         <div class="item-time">${fmtWhen(it.run_at)} · ${esc(it.accounts.join(", "))} ${it.has_media ? "· 🖼" : ""} ${badge}${res}</div>
@@ -707,8 +752,48 @@ async function loadScheduled() {
       toast("삭제됨", "ok"); loadScheduled();
     });
     box.querySelectorAll("[data-editsched]").forEach((el) => el.onclick = () => beginSchedEdit(el.dataset.editsched));
+    box.querySelectorAll(".thumbs").forEach((row) => {
+      let imgs = []; try { imgs = JSON.parse(row.dataset.imgs || "[]"); } catch (_) {}
+      row.querySelectorAll(".thumb").forEach((t) => t.onclick = () => openLightbox(imgs, +t.dataset.idx || 0));
+    });
   } catch (e) { box.innerHTML = '<p class="hint">목록을 불러오지 못했어요.</p>'; }
 }
+
+// ── 이미지 캐러셀 라이트박스 ──
+let LB_IMGS = [], LB_I = 0;
+function lbRender() {
+  const u = LB_IMGS[LB_I];
+  $("lbStage").innerHTML = `<img src="${esc(u)}" onerror="this.outerHTML='<div class=\\'imgfail\\'>이미지를 불러올 수 없어요</div>'" />`;
+  $("lbCount").textContent = `${LB_I + 1} / ${LB_IMGS.length}`;
+  const multi = LB_IMGS.length > 1;
+  $("lbPrev").style.display = $("lbNext").style.display = multi ? "flex" : "none";
+  $("lbDots").innerHTML = multi ? LB_IMGS.map((_, i) => `<b class="${i === LB_I ? "on" : ""}" data-d="${i}"></b>`).join("") : "";
+  $("lbDots").querySelectorAll("b").forEach((d) => d.onclick = (e) => { e.stopPropagation(); LB_I = +d.dataset.d; lbRender(); });
+}
+function openLightbox(imgs, start) {
+  if (!imgs || !imgs.length) return;
+  LB_IMGS = imgs; LB_I = Math.min(Math.max(start || 0, 0), imgs.length - 1);
+  lbRender(); $("lightbox").classList.add("show");
+}
+function lbClose() { $("lightbox").classList.remove("show"); LB_IMGS = []; }
+function lbStep(d) { if (!LB_IMGS.length) return; LB_I = (LB_I + d + LB_IMGS.length) % LB_IMGS.length; lbRender(); }
+$("lbPrev").onclick = (e) => { e.stopPropagation(); lbStep(-1); };
+$("lbNext").onclick = (e) => { e.stopPropagation(); lbStep(1); };
+$("lbClose").onclick = (e) => { e.stopPropagation(); lbClose(); };
+$("lightbox").onclick = (e) => { if (e.target.id === "lightbox" || e.target.id === "lbStage") lbClose(); };
+document.addEventListener("keydown", (e) => {
+  if (!$("lightbox").classList.contains("show")) return;
+  if (e.key === "Escape") lbClose();
+  else if (e.key === "ArrowLeft") lbStep(-1);
+  else if (e.key === "ArrowRight") lbStep(1);
+});
+// 모바일 스와이프(좌우)
+let lbX = null;
+$("lightbox").addEventListener("touchstart", (e) => { lbX = e.touches[0].clientX; }, { passive: true });
+$("lightbox").addEventListener("touchend", (e) => {
+  if (lbX === null) return; const dx = e.changedTouches[0].clientX - lbX; lbX = null;
+  if (Math.abs(dx) > 45) lbStep(dx < 0 ? 1 : -1);
+});
 
 $("schedShowAll").onchange = loadScheduled;
 

@@ -31,7 +31,8 @@ def _save(items: list[dict]) -> None:
 
 def add(text: str, run_at_ms: int, account_ids: list[str] | None = None,
         image_urls: list[str] | None = None, video_url: str | None = None,
-        topic: str | None = None) -> dict:
+        topic: str | None = None, preview_urls: list[str] | None = None,
+        video_preview: str | None = None) -> dict:
     items = _load()
     item = {
         "id": uuid.uuid4().hex[:8],
@@ -39,6 +40,10 @@ def add(text: str, run_at_ms: int, account_ids: list[str] | None = None,
         "run_at": int(run_at_ms),
         "account_ids": account_ids or [],
         "image_urls": image_urls or [],
+        # preview_urls: 브라우저 미리보기용 로컬 주소(/media/...). 공개 URL(터널)이
+        # 죽어도 목록에서 이미지가 보이게 하려고 함께 저장한다.
+        "preview_urls": preview_urls or [],
+        "video_preview": video_preview,
         "video_url": video_url,
         "topic": topic,
         "status": "pending",
@@ -85,15 +90,21 @@ def update_text(item_id: str, text: str) -> dict | None:
 
 
 def set_media(item_id: str, image_urls: list[str] | None = None,
-              video_url: str | None = None) -> bool:
+              video_url: str | None = None,
+              preview_urls: list[str] | None = None,
+              video_preview: str | None = None) -> bool:
     """발행 전(pending) 예약 글에 미디어를 붙입니다."""
     items = _load()
     for i in items:
         if i.get("id") == item_id and i.get("status") == "pending":
             if image_urls is not None:
                 i["image_urls"] = image_urls
+            if preview_urls is not None:
+                i["preview_urls"] = preview_urls
             if video_url is not None:
                 i["video_url"] = video_url
+            if video_preview is not None:
+                i["video_preview"] = video_preview
             _save(items)
             return True
     return False

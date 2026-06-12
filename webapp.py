@@ -834,7 +834,10 @@ def _public_sched_item(it: dict) -> dict:
         "accounts": labels, "status": it.get("status", "pending"),
         "result": it.get("result"),
         "has_media": bool(it.get("image_urls") or it.get("video_url")),
-        "image_urls": it.get("image_urls") or [],  # 목록 미리보기용
+        "image_urls": it.get("image_urls") or [],  # 게시용 공개 URL
+        # 목록 미리보기용 로컬 주소(/media/...). 공개 URL이 죽어도 여기로 보여줌.
+        "preview_urls": it.get("preview_urls") or [],
+        "video_preview": it.get("video_preview"),
     }
 
 
@@ -898,8 +901,12 @@ def api_schedule_post():
         return jsonify({"ok": False, "error": "게시할 계정을 선택하세요."}), 400
 
     image_urls = [u for u in (data.get("image_urls") or []) if u]
+    preview_urls = [u for u in (data.get("preview_urls") or []) if u]
     video_url = (data.get("video_url") or "").strip() or None
-    item = scheduled_posts.add(text, run_at, acc_ids, image_urls, video_url, data.get("topic"))
+    video_preview = (data.get("video_preview") or "").strip() or None
+    item = scheduled_posts.add(text, run_at, acc_ids, image_urls, video_url,
+                               data.get("topic"), preview_urls=preview_urls,
+                               video_preview=video_preview)
     _ensure_publish_watcher()
     return jsonify({"ok": True, "item": _public_sched_item(item)})
 
@@ -943,7 +950,7 @@ def _prepared_media_backfill() -> None:
                         prompts = [p, p + ", different scene, alternate composition"]
                     except Exception:  # noqa: BLE001
                         prompts = []
-                urls = []
+                urls, previews = [], []
                 for n, p in enumerate(prompts[:config.IMAGES_PER_POST]):
                     if n:  # 무료 엔진은 동시 요청을 안 받아줘서 사이에 간격을 둠
                         time.sleep(4)
@@ -951,12 +958,15 @@ def _prepared_media_backfill() -> None:
                         r = _make_ai_image(p)
                         if r.get("image_url"):
                             urls.append(r["image_url"])
+                            if r.get("preview_url"):
+                                previews.append(r["preview_url"])
                         elif r.get("image_error"):
                             print(f"  ⚠️ 이미지 호스팅 실패({it['id']}): {r['image_error']}")
                     except Exception as exc:  # noqa: BLE001
                         print(f"  ⚠️ 이미지 생성 실패({it['id']}): {exc}")
                 if urls:
-                    scheduled_posts.set_media(it["id"], image_urls=urls)
+                    scheduled_posts.set_media(it["id"], image_urls=urls,
+                                              preview_urls=previews)
                     print(f"  🖼 이미지 {len(urls)}장 첨부 완료 ({idx}/{total})")
         finally:
             _media_backfill["running"] = False
