@@ -141,9 +141,10 @@ def _card(v, big, small, page, total, handle, is_cover, is_last):
 
     hf = font("Bold", 32)
     d.text((M, H - M - hf.size), handle, font=hf, fill=v["sub"])
-    tail = "DM 💬" if is_last else "다음 →"
-    d.text((W - M - d.textlength(tail, font=hf), H - M - hf.size), tail,
-           font=hf, fill=v["accent"])
+    if not is_last:  # 마지막 장엔 굳이 'DM' 박지 않음 — 공식 계정 톤
+        tail = "다음 →"
+        d.text((W - M - d.textlength(tail, font=hf), H - M - hf.size), tail,
+               font=hf, fill=v["accent"])
     return img
 
 
