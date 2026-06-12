@@ -896,9 +896,13 @@ def _scheduled_publish_loop():
                     results = _publish(item["text"], _fresh_image_urls(item),
                                        item.get("video_url"), targets, item.get("topic"))
                     success = sum(1 for r in results if r.get("ok"))
+                    err = next((r.get("error") for r in results if not r.get("ok")), "")
+                    summary = f"{success}/{len(results)} 계정 게시"
+                    if not success and err:
+                        summary += f" · {err[:200]}"
                     scheduled_posts.mark(
                         item["id"], "done" if success else "failed",
-                        {"summary": f"{success}/{len(results)} 계정 게시", "results": results},
+                        {"summary": summary, "results": results},
                     )
                 except Exception as exc:  # noqa: BLE001
                     scheduled_posts.mark(item["id"], "failed", {"summary": "오류: " + str(exc)})
@@ -966,24 +970,37 @@ def _attach_cardnews_to_scheduled() -> None:
             if prepared.PREPARED_PATH.exists() else []
     except Exception:  # noqa: BLE001
         return
-    by_text = {(e.get("text") or "").strip(): (e.get("username") or "")
-               for e in entries}
+    by_text = {(e.get("text") or "").strip(): e for e in entries}
     for it in scheduled_posts.list_all():
-        if it.get("status") != "pending" or it.get("image_files"):
+        if it.get("status") not in ("pending", "failed"):
             continue
-        username = by_text.get((it.get("text") or "").strip())
-        if not username:
-            continue
-        files = sorted((ASSETS_DIR / "cardnews" / username).glob("*.png"))
-        if not files:
-            continue
-        scheduled_posts.set_media(
-            it["id"],
-            image_files=[str(f) for f in files],
-            preview_urls=[f"/assets/cardnews/{username}/{f.name}" for f in files],
-            image_urls=[],  # 죽은 터널 주소 제거 — 발행 때 image_files를 새로 호스팅
-        )
-        print(f"  🃏 카드뉴스 {len(files)}장 자동 첨부: @{username} ({it['id']})")
+        e = by_text.get((it.get("text") or "").strip())
+        username = (e or {}).get("username")
+        # 이미지(image_files)가 없으면 카드뉴스를 붙인다.
+        if not it.get("image_files"):
+            files = [str(ROOT_REL(p)) for p in (e or {}).get("image_files", [])]
+            files = [f for f in files if Path(f).exists()]
+            if not files and username:  # 원래 글(plan 아님)은 계정 폴더에서 찾음
+                files = [str(f) for f in sorted((ASSETS_DIR / "cardnews" / username).glob("*.png"))]
+            if files:
+                if it.get("status") == "failed":
+                    scheduled_posts.revive(it["id"])
+                scheduled_posts.set_media(
+                    it["id"], image_files=files,
+                    preview_urls=["/" + f for f in files],
+                    image_urls=[])
+                print(f"  🃏 카드뉴스 {len(files)}장 첨부/복구: @{username} ({it['id']})")
+                continue
+        # 이미 이미지가 있는데 실패한 경우: 되살려서 재발행 대기로
+        if it.get("status") == "failed":
+            scheduled_posts.revive(it["id"])
+            print(f"  ♻️ 실패 글 재발행 대기로 복구: {it['id']}")
+
+
+def ROOT_REL(p: str) -> Path:
+    """prepared의 image_files 경로(상대)를 실제 경로로."""
+    pp = Path(p)
+    return pp if pp.is_absolute() else (Path(".") / pp)
 
 
 # ── 준비된 글 이미지 자동 첨부 ──
@@ -1090,6 +1107,37 @@ def api_scheduled_delete():
     data = request.get_json(silent=True) or {}
     scheduled_posts.delete((data.get("id") or "").strip())
     return jsonify({"ok": True})
+
+
+@app.post("/api/scheduled/publish_now")
+def api_scheduled_publish_now():
+    """예약 글을 지금 즉시 발행합니다(실패한 글 재시도 포함). 실제 에러를 그대로 반환."""
+    from threads_auto import scheduled_posts
+    data = request.get_json(silent=True) or {}
+    item_id = (data.get("id") or "").strip()
+    it = scheduled_posts.get(item_id)
+    if not it:
+        return jsonify({"ok": False, "error": "예약 글을 찾을 수 없어요."}), 404
+    if it.get("status") == "failed":
+        scheduled_posts.revive(item_id)
+        it = scheduled_posts.get(item_id)
+    all_accs = accounts.list_accounts()
+    ids = it.get("account_ids") or []
+    targets = [a for a in all_accs if a["id"] in ids] if ids else all_accs
+    if not targets:
+        return jsonify({"ok": False, "error": "발행할 대상 계정이 없어요(계정 탭 확인)."}), 400
+    try:
+        results = _publish(it["text"], _fresh_image_urls(it),
+                           it.get("video_url"), targets, it.get("topic"))
+    except Exception as exc:  # noqa: BLE001
+        scheduled_posts.mark(item_id, "failed", {"summary": "오류: " + str(exc)})
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    success = sum(1 for r in results if r.get("ok"))
+    err = next((r.get("error") for r in results if not r.get("ok")), "")
+    summary = f"{success}/{len(results)} 계정 게시" + (f" · {err[:200]}" if not success and err else "")
+    scheduled_posts.mark(item_id, "done" if success else "failed",
+                         {"summary": summary, "results": results})
+    return jsonify({"ok": bool(success), "summary": summary, "error": err if not success else ""})
 
 
 @app.post("/api/scheduled/set_media")

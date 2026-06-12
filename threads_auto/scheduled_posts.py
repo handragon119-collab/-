@@ -134,3 +134,17 @@ def mark(item_id: str, status: str, result=None) -> None:
             if result is not None:
                 i["result"] = result
     _save(items)
+
+
+def revive(item_id: str) -> bool:
+    """실패(failed)한 예약 글을 다시 발행 대기(pending)로 되돌립니다."""
+    items = _load()
+    changed = False
+    for i in items:
+        if i.get("id") == item_id and i.get("status") == "failed":
+            i["status"] = "pending"
+            i["result"] = None
+            changed = True
+    if changed:
+        _save(items)
+    return changed

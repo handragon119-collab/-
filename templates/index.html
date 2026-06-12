@@ -742,6 +742,8 @@ async function loadScheduled() {
             return `<div class="thumb${more ? " more" : ""}"${more ? ` data-more="${srcs.length - MAX_THUMB}"` : ""} data-idx="${i}"><img src="${escAttr(u)}" loading="lazy" onerror="this.outerHTML='<div class=\\'imgfail\\'>이미지를<br>불러올 수 없어요</div>'" /></div>`;
           }).join("") +
           '</div>' : "";
+      const nowBtn = (it.status === "pending" || it.status === "failed")
+        ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-publishnow="${it.id}">🚀 지금 발행</button> ` : "";
       const mediaBtns = it.status === "pending"
         ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-setmedia="${it.id}">🖼 이미지 ${srcs.length ? "교체" : "추가"}</button> `
           + (srcs.length ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-clrmedia="${it.id}">🗑 빼기</button> ` : "")
@@ -750,7 +752,7 @@ async function loadScheduled() {
         <div class="item-time">${fmtWhen(it.run_at)} · ${esc(it.accounts.join(", "))} ${it.has_media ? "· 🖼" : ""} ${badge}${res}</div>
         <div class="item-text" data-itemtext="${it.id}">${esc(it.text)}</div>
         ${thumbs}
-        ${editBtn}${mediaBtns}<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
+        ${nowBtn}${editBtn}${mediaBtns}<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
       </div>`;
     }).join("");
     box.querySelectorAll("[data-delsched]").forEach((el) => el.onclick = async () => {
@@ -761,6 +763,14 @@ async function loadScheduled() {
     box.querySelectorAll(".thumbs").forEach((row) => {
       const imgs = SCHED_IMGS[row.dataset.imgsid] || [];
       row.querySelectorAll(".thumb").forEach((t) => t.onclick = () => openLightbox(imgs, +t.dataset.idx || 0));
+    });
+    box.querySelectorAll("[data-publishnow]").forEach((el) => el.onclick = async () => {
+      if (!confirm("이 글을 지금 바로 발행할까요?")) return;
+      el.disabled = true; el.textContent = "발행 중…";
+      const r = await api("/api/scheduled/publish_now", { method: "POST", body: JSON.stringify({ id: el.dataset.publishnow }) });
+      if (r.ok) toast("✅ 발행 완료! " + (r.summary || ""), "ok");
+      else toast("발행 실패: " + (r.error || r.summary || "알 수 없는 오류"), "error");
+      loadScheduled();
     });
     box.querySelectorAll("[data-setmedia]").forEach((el) => el.onclick = () => beginSchedSetMedia(el.dataset.setmedia));
     box.querySelectorAll("[data-clrmedia]").forEach((el) => el.onclick = async () => {
