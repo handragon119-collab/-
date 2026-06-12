@@ -1015,6 +1015,28 @@ def api_scheduled_delete():
     return jsonify({"ok": True})
 
 
+@app.post("/api/scheduled/set_media")
+def api_scheduled_set_media():
+    """예약된 글(발행 전)의 이미지/영상을 교체하거나 비웁니다.
+
+    image_urls/preview_urls를 빈 배열로 보내면 '이미지 빼기'가 됩니다.
+    """
+    from threads_auto import scheduled_posts
+    data = request.get_json(silent=True) or {}
+    item_id = (data.get("id") or "").strip()
+    image_urls = [u for u in (data.get("image_urls") or []) if u]
+    preview_urls = [u for u in (data.get("preview_urls") or []) if u]
+    video_url = (data.get("video_url") or "").strip() or None
+    video_preview = (data.get("video_preview") or "").strip() or None
+    ok = scheduled_posts.set_media(
+        item_id, image_urls=image_urls, preview_urls=preview_urls,
+        video_url=video_url, video_preview=video_preview)
+    if not ok:
+        return jsonify({"ok": False, "error": "바꿀 수 없는 예약 글이에요(이미 발행됐거나 없음)."}), 400
+    item = scheduled_posts.get(item_id)
+    return jsonify({"ok": True, "item": _public_sched_item(item) if item else None})
+
+
 @app.post("/api/scheduled/edit")
 def api_scheduled_edit():
     """예약된 글 본문을 수정하고, 수정 내용을 학습합니다(이전 글과 비교)."""

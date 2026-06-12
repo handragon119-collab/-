@@ -203,6 +203,7 @@
         <button class="ghost" id="uploadWriteBtn">🖼️ 보고 AI 글쓰기</button>
       </div>
       <input type="file" id="fileInput" accept="image/*,video/*" multiple style="display:none" />
+      <input type="file" id="schedFileInput" accept="image/*,video/*" multiple style="display:none" />
       <p class="hint">사진 여러 장 또는 동영상 1개를 올릴 수 있어요. 'AI 글쓰기'는 올린 사진·영상을 보고 어울리는 글을 써줍니다.</p>
 
       <label>생성된 글 (수정 가능)</label>
@@ -741,11 +742,15 @@ async function loadScheduled() {
             return `<div class="thumb${more ? " more" : ""}"${more ? ` data-more="${srcs.length - MAX_THUMB}"` : ""} data-idx="${i}"><img src="${escAttr(u)}" loading="lazy" onerror="this.outerHTML='<div class=\\'imgfail\\'>이미지를<br>불러올 수 없어요</div>'" /></div>`;
           }).join("") +
           '</div>' : "";
+      const mediaBtns = it.status === "pending"
+        ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-setmedia="${it.id}">🖼 이미지 ${srcs.length ? "교체" : "추가"}</button> `
+          + (srcs.length ? `<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-clrmedia="${it.id}">🗑 빼기</button> ` : "")
+        : "";
       return `<div class="item" data-itemid="${it.id}">
         <div class="item-time">${fmtWhen(it.run_at)} · ${esc(it.accounts.join(", "))} ${it.has_media ? "· 🖼" : ""} ${badge}${res}</div>
         <div class="item-text" data-itemtext="${it.id}">${esc(it.text)}</div>
         ${thumbs}
-        ${editBtn}<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
+        ${editBtn}${mediaBtns}<button class="ghost" style="width:auto;padding:6px 12px;margin-top:8px" data-delsched="${it.id}">${it.status === "pending" ? "예약 취소" : "목록에서 지우기"}</button>
       </div>`;
     }).join("");
     box.querySelectorAll("[data-delsched]").forEach((el) => el.onclick = async () => {
@@ -757,8 +762,34 @@ async function loadScheduled() {
       const imgs = SCHED_IMGS[row.dataset.imgsid] || [];
       row.querySelectorAll(".thumb").forEach((t) => t.onclick = () => openLightbox(imgs, +t.dataset.idx || 0));
     });
+    box.querySelectorAll("[data-setmedia]").forEach((el) => el.onclick = () => beginSchedSetMedia(el.dataset.setmedia));
+    box.querySelectorAll("[data-clrmedia]").forEach((el) => el.onclick = async () => {
+      if (!confirm("이 예약 글의 이미지를 모두 뺄까요?")) return;
+      const r = await api("/api/scheduled/set_media", { method: "POST", body: JSON.stringify({ id: el.dataset.clrmedia, image_urls: [], preview_urls: [] }) });
+      toast(r.ok ? "이미지를 뺐어요." : (r.error || "실패"), r.ok ? "ok" : "error"); loadScheduled();
+    });
   } catch (e) { box.innerHTML = '<p class="hint">목록을 불러오지 못했어요.</p>'; }
 }
+
+// 예약 글에 이미지 교체/추가: 파일 고르면 업로드 → 그 예약 글에 붙임
+let SCHED_MEDIA_ID = null;
+function beginSchedSetMedia(id) { SCHED_MEDIA_ID = id; $("schedFileInput").value = ""; $("schedFileInput").click(); }
+$("schedFileInput").onchange = async (e) => {
+  const files = [...e.target.files]; const id = SCHED_MEDIA_ID; SCHED_MEDIA_ID = null;
+  if (!files.length || !id) return;
+  toast("업로드 중…");
+  const fd = new FormData(); files.forEach((f) => fd.append("files", f)); fd.append("write", "0");
+  try {
+    const resp = await fetch("/api/upload_media", { method: "POST", body: fd });
+    const j = await resp.json();
+    if (!j.ok) return toast(j.error || "업로드 실패", "error");
+    const r = await api("/api/scheduled/set_media", { method: "POST", body: JSON.stringify({
+      id, image_urls: j.image_urls || [], preview_urls: j.preview_urls || [],
+      video_url: j.video_url || null, video_preview: j.video_preview || null }) });
+    toast(r.ok ? "이미지를 붙였어요! 미리보기 확인해봐요." : (r.error || "실패"), r.ok ? "ok" : "error");
+    loadScheduled();
+  } catch (err) { toast("업로드 오류: " + err, "error"); }
+};
 
 // ── 이미지 캐러셀 라이트박스 ──
 let LB_IMGS = [], LB_I = 0;
