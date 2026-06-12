@@ -732,12 +732,13 @@ async function loadScheduled() {
       // 미리보기는 로컬(/media) 주소 우선 — 공개 URL(터널)이 죽어도 보이게.
       const pv = it.preview_urls || [], pub = it.image_urls || [];
       const srcs = []; for (let i = 0; i < Math.max(pv.length, pub.length); i++) { const u = pv[i] || pub[i]; if (u) srcs.push(u); }
+      SCHED_IMGS[it.id] = srcs;  // 캐러셀에서 쓸 이미지 목록(속성에 JSON 넣으면 깨져서 JS로 보관)
       const MAX_THUMB = 4;
       const thumbs = srcs.length
-        ? '<div class="thumbs" data-imgs="' + esc(JSON.stringify(srcs)) + '">' +
+        ? `<div class="thumbs" data-imgsid="${it.id}">` +
           srcs.slice(0, MAX_THUMB).map((u, i) => {
             const more = (i === MAX_THUMB - 1 && srcs.length > MAX_THUMB);
-            return `<div class="thumb${more ? " more" : ""}"${more ? ` data-more="${srcs.length - MAX_THUMB}"` : ""} data-idx="${i}"><img src="${esc(u)}" loading="lazy" onerror="this.outerHTML='<div class=\\'imgfail\\'>이미지를<br>불러올 수 없어요</div>'" /></div>`;
+            return `<div class="thumb${more ? " more" : ""}"${more ? ` data-more="${srcs.length - MAX_THUMB}"` : ""} data-idx="${i}"><img src="${escAttr(u)}" loading="lazy" onerror="this.outerHTML='<div class=\\'imgfail\\'>이미지를<br>불러올 수 없어요</div>'" /></div>`;
           }).join("") +
           '</div>' : "";
       return `<div class="item" data-itemid="${it.id}">
@@ -753,7 +754,7 @@ async function loadScheduled() {
     });
     box.querySelectorAll("[data-editsched]").forEach((el) => el.onclick = () => beginSchedEdit(el.dataset.editsched));
     box.querySelectorAll(".thumbs").forEach((row) => {
-      let imgs = []; try { imgs = JSON.parse(row.dataset.imgs || "[]"); } catch (_) {}
+      const imgs = SCHED_IMGS[row.dataset.imgsid] || [];
       row.querySelectorAll(".thumb").forEach((t) => t.onclick = () => openLightbox(imgs, +t.dataset.idx || 0));
     });
   } catch (e) { box.innerHTML = '<p class="hint">목록을 불러오지 못했어요.</p>'; }
@@ -832,6 +833,9 @@ $("schedStopBtn").onclick = async () => { const r = await api("/api/schedule", {
 
 // 댓글 자동 답글 + 실시간 보고서
 const esc = (s) => (s || "").replace(/</g, "&lt;");
+// HTML 속성값용: 큰따옴표·앰퍼샌드까지 안전하게 변환 (URL을 속성에 넣을 때 필수)
+const escAttr = (s) => (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const SCHED_IMGS = {};  // 예약 글 id → 미리보기 이미지 URL 배열 (캐러셀용)
 let replyPoll = null, REPLY_ITEMS = [], REPLY_RUNNING = false, REPLY_SUMMARY = "";
 function agoKo(ms) {
   if (!ms) return "";
