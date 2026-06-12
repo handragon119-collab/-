@@ -32,7 +32,8 @@ def _save(items: list[dict]) -> None:
 def add(text: str, run_at_ms: int, account_ids: list[str] | None = None,
         image_urls: list[str] | None = None, video_url: str | None = None,
         topic: str | None = None, preview_urls: list[str] | None = None,
-        video_preview: str | None = None) -> dict:
+        video_preview: str | None = None,
+        image_files: list[str] | None = None) -> dict:
     items = _load()
     item = {
         "id": uuid.uuid4().hex[:8],
@@ -40,9 +41,10 @@ def add(text: str, run_at_ms: int, account_ids: list[str] | None = None,
         "run_at": int(run_at_ms),
         "account_ids": account_ids or [],
         "image_urls": image_urls or [],
-        # preview_urls: 브라우저 미리보기용 로컬 주소(/media/...). 공개 URL(터널)이
-        # 죽어도 목록에서 이미지가 보이게 하려고 함께 저장한다.
+        # preview_urls: 브라우저 미리보기용 로컬 주소(/media/... 또는 /assets/...).
+        # image_files: 발행 직전 새로 호스팅할 로컬 파일 경로(터널이 죽어도 안전).
         "preview_urls": preview_urls or [],
+        "image_files": image_files or [],
         "video_preview": video_preview,
         "video_url": video_url,
         "topic": topic,

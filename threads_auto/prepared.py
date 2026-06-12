@@ -88,8 +88,10 @@ def import_pending() -> list[dict]:
         now = datetime.now()
         while dt <= now + timedelta(minutes=2):  # 지난 시각이면 다음 날로
             dt += timedelta(days=1)
-        item = scheduled_posts.add(text, int(dt.timestamp() * 1000),
-                                   [acc["id"]], topic=e.get("topic"))
+        item = scheduled_posts.add(
+            text, int(dt.timestamp() * 1000), [acc["id"]], topic=e.get("topic"),
+            image_files=e.get("image_files") or [],
+            preview_urls=e.get("preview_urls") or [])
         done.add(eid)
         changed = True
         results.append({"id": eid, "ok": True, "account": acc.get("label"),
