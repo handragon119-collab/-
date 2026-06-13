@@ -303,14 +303,74 @@ _MEDIA_TYPES = {
 _VIDEO_EXTS = {"mp4", "mov", "m4v", "webm", "avi"}
 
 
+_UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Safari/605.1"}
+
+
+def _host_catbox(data: bytes, ext: str) -> str:
+    import requests
+    r = requests.post("https://catbox.moe/user/api.php",
+                      data={"reqtype": "fileupload"},
+                      files={"fileToUpload": (f"f.{ext or 'png'}", data)},
+                      headers=_UA, timeout=90)
+    r.raise_for_status()
+    url = (r.text or "").strip()
+    if not url.startswith("http"):
+        raise RuntimeError(f"응답 이상: {url[:120]}")
+    return url
+
+
+def _host_0x0(data: bytes, ext: str) -> str:
+    import requests
+    r = requests.post("https://0x0.st",
+                      files={"file": (f"f.{ext or 'png'}", data)},
+                      headers=_UA, timeout=90)
+    r.raise_for_status()
+    url = (r.text or "").strip()
+    if not url.startswith("http"):
+        raise RuntimeError(f"응답 이상: {url[:120]}")
+    return url
+
+
+def _host_tmpfiles(data: bytes, ext: str) -> str:
+    import requests
+    r = requests.post("https://tmpfiles.org/api/v1/upload",
+                      files={"file": (f"f.{ext or 'png'}", data)},
+                      headers=_UA, timeout=90)
+    r.raise_for_status()
+    url = (r.json().get("data") or {}).get("url", "")
+    if not url.startswith("http"):
+        raise RuntimeError(f"응답 이상: {str(r.text)[:120]}")
+    # 뷰어 URL → 직접 다운로드 URL (tmpfiles.org/123 → tmpfiles.org/dl/123)
+    return url.replace("tmpfiles.org/", "tmpfiles.org/dl/", 1)
+
+
 def _host_bytes(data: bytes, ext: str) -> str:
-    """이미지/영상 바이트를 공개 URL로 호스팅. 영상은 항상 터널 사용."""
+    """이미지/영상 바이트를 공개 URL로 호스팅. 여러 방법을 순서대로 시도.
+
+    키·설치가 필요 없는 무료 호스트(catbox→0x0→tmpfiles)를 먼저 쓰고,
+    그다음 Imgur(키 있을 때), 마지막으로 cloudflared 터널을 시도한다.
+    """
     is_video = ext in _VIDEO_EXTS
+    errors = []
+    for name, fn in (("catbox", _host_catbox), ("0x0", _host_0x0),
+                     ("tmpfiles", _host_tmpfiles)):
+        try:
+            return fn(data, ext)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{name}({exc})")
     if config.IMGUR_CLIENT_ID and not is_video:
-        from threads_auto.image_generator import upload_to_imgur
-        return upload_to_imgur(config.IMGUR_CLIENT_ID, data)
-    from threads_auto import tunnel_host
-    return tunnel_host.host_image(data, ext=ext)
+        try:
+            from threads_auto.image_generator import upload_to_imgur
+            return upload_to_imgur(config.IMGUR_CLIENT_ID, data)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"imgur({exc})")
+    try:
+        from threads_auto import tunnel_host
+        return tunnel_host.host_image(data, ext=ext)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"tunnel({exc})")
+    raise RuntimeError("이미지 호스팅 실패 — " + " / ".join(errors))
 
 
 # 미리보기용: 생성/업로드한 미디어를 이 앱(Flask)에서 직접 제공합니다.
@@ -1109,6 +1169,16 @@ def api_scheduled_delete():
     return jsonify({"ok": True})
 
 
+@app.get("/api/selftest")
+def api_selftest():
+    """이미지 호스팅이 되는지 즉시 점검(작은 테스트 이미지 업로드)."""
+    try:
+        url = _host_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64, "png")
+        return jsonify({"ok": True, "url": url})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.post("/api/scheduled/publish_now")
 def api_scheduled_publish_now():
     """예약 글을 지금 즉시 발행합니다(실패한 글 재시도 포함). 실제 에러를 그대로 반환."""
@@ -1406,6 +1476,12 @@ if __name__ == "__main__":
     print(f"  👉 http://127.0.0.1:{port}")
     print("  (종료하려면 이 창에서 Ctrl+C)")
     print("=" * 50)
+    # 이미지 호스팅 자가진단 — 카드뉴스를 공개 URL로 올릴 수 있는지 즉시 확인
+    try:
+        _ping = _host_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64, "png")
+        print(f"  🌐 이미지 호스팅 정상 (예: {_ping[:48]}…)")
+    except Exception as _hexc:  # noqa: BLE001
+        print(f"  ❌ 이미지 호스팅 실패! 이미지 글이 안 올라갈 수 있어요 → {_hexc}")
     # 자동 답글이 켜진 계정이 있으면 시작과 동시에 실시간 추적 시작
     _ensure_auto_reply_watcher()
     # 미리 준비된 글(prepared_posts.json)이 있으면 자동으로 예약 큐에 등록
