@@ -299,8 +299,8 @@ def main() -> None:
     random.seed(20260613)
     n = len(ANGLES)
     offset = n // len(ACCOUNTS)  # 계정 간 간격 → 같은 슬롯에 다른 글
+    cnt = {acc: 0 for acc in ACCOUNTS}  # 계정별 글 카운터(색/레이아웃 순환용)
     entries = []
-    idx = 0
     for d in range(DAYS):
         date = datetime.datetime(START.year, START.month, START.day) + datetime.timedelta(days=d)
         for w, (h0, h1) in enumerate(WINDOWS):
@@ -308,9 +308,14 @@ def main() -> None:
                 angle = ANGLES[(d * 3 + w + a * offset) % n]
                 mins = random.randint(h0 * 60, h1 * 60 - 1)
                 dt = date + datetime.timedelta(minutes=mins)
-                closer = "" if angle["cat"] == "F" else CLOSERS[idx % len(CLOSERS)]
+                closer = "" if angle["cat"] == "F" else CLOSERS[(cnt[acc] + a) % len(CLOSERS)]
                 pid = f"plan-{SHORT[acc]}-d{d:02d}-w{w}"
-                paths = cardgen.render_post(acc, pid, angle["cards"], seed=idx,
+                c = cnt[acc]
+                cnt[acc] += 1
+                # 색은 계정마다 전 팔레트를 순환(한 톤 X), 같은 슬롯 3계정은 서로 다른 색
+                paths = cardgen.render_post(acc, pid, angle["cards"],
+                                            color_seed=c + a * 4,
+                                            layout_seed=c + a * 2,
                                             handle=HANDLE[acc])
                 entries.append({
                     "id": pid, "username": acc, "topic": angle["topic"],
@@ -319,7 +324,6 @@ def main() -> None:
                     "image_files": paths,
                     "preview_urls": ["/" + p for p in paths],
                 })
-                idx += 1
 
     existing = []
     if PREPARED.exists():
