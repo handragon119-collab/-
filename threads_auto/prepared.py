@@ -91,7 +91,7 @@ def import_pending() -> list[dict]:
         item = scheduled_posts.add(
             text, int(dt.timestamp() * 1000), [acc["id"]], topic=e.get("topic"),
             image_files=e.get("image_files") or [],
-            preview_urls=e.get("preview_urls") or [])
+            preview_urls=e.get("preview_urls") or [], source_id=eid)
         done.add(eid)
         changed = True
         results.append({"id": eid, "ok": True, "account": acc.get("label"),

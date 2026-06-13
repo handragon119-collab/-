@@ -41,33 +41,34 @@ def _shift(hex_color: str, dl: float = 0.0, ds: float = 0.0) -> str:
     return _hex((round(r * 255), round(g * 255), round(b * 255)))
 
 
-# 계정별 '스킴'(서로 가까운 색 조합 여러 개) — 매번 그중 하나가 골라진다.
+# 계정별 '스킴'(색 조합 여러 개). 각 스킴은 bg→bg2 그라데이션 배경을 쓴다.
+# 검정 일변도 대신 색을 섞되, 계정별 정체성(피엔 딥톤 / 피엠 그린 / 모키 레드)은 유지.
 BRANDS = {
     "pnent_official": {
         "header": "PN ENTERTAINMENT",
         "schemes": [
-            {"bg": "#0D0D0F", "fg": "#FFFFFF", "sub": "#9A9AA6", "accent": "#FFFFFF"},
-            {"bg": "#101418", "fg": "#FFFFFF", "sub": "#8E97A4", "accent": "#E6E6EE"},
-            {"bg": "#0A0C12", "fg": "#F4F5FA", "sub": "#8890A0", "accent": "#C9CBD6"},
-            {"bg": "#15120F", "fg": "#FFFFFF", "sub": "#A39B92", "accent": "#F0E9E2"},
+            {"bg": "#1B1A3A", "bg2": "#2A2960", "fg": "#FFFFFF", "sub": "#B9BEEA", "accent": "#FF7AA2"},
+            {"bg": "#0E2E2B", "bg2": "#19534B", "fg": "#FFFFFF", "sub": "#9FD9CE", "accent": "#4ADE80"},
+            {"bg": "#2A1736", "bg2": "#4A2A63", "fg": "#FFFFFF", "sub": "#D3BBE8", "accent": "#FFC861"},
+            {"bg": "#16233A", "bg2": "#2E4A78", "fg": "#FFFFFF", "sub": "#A8C2E8", "accent": "#38BDF8"},
         ],
     },
     "pm_ent2026": {
         "header": "PM ENTERTAINMENT",
         "schemes": [
-            {"bg": "#F2FBF6", "fg": "#0B3D2E", "sub": "#4E7263", "accent": "#16A34A"},
-            {"bg": "#EAF7F0", "fg": "#0C3A2C", "sub": "#52786A", "accent": "#0EA371"},
-            {"bg": "#EEF6EC", "fg": "#123D24", "sub": "#5A7B5C", "accent": "#22A55B"},
-            {"bg": "#0B3D2E", "fg": "#EAFBF1", "sub": "#8FBFA9", "accent": "#34D399"},
+            {"bg": "#0B3D2E", "bg2": "#11724A", "fg": "#EAFBF1", "sub": "#A6E6C4", "accent": "#86F7B0"},
+            {"bg": "#EAFBF1", "bg2": "#CDF3DF", "fg": "#0B3D2E", "sub": "#3E8460", "accent": "#0EA371"},
+            {"bg": "#0F5132", "bg2": "#1B8A57", "fg": "#FFFFFF", "sub": "#CFF3E0", "accent": "#EAFBF1"},
+            {"bg": "#F2FFF6", "bg2": "#DDF7E6", "fg": "#0C3A2C", "sub": "#4E9E78", "accent": "#16A34A"},
         ],
     },
     "moki_ent": {
         "header": "MOKI ENTERTAINMENT",
         "schemes": [
-            {"bg": "#C8102E", "fg": "#FFFFFF", "sub": "#FFD2D9", "accent": "#FFFFFF"},
-            {"bg": "#B60D29", "fg": "#FFFFFF", "sub": "#FFC9D2", "accent": "#FFE3E7"},
-            {"bg": "#D11233", "fg": "#FFFFFF", "sub": "#FFD7DD", "accent": "#FFFFFF"},
-            {"bg": "#1A0608", "fg": "#FFFFFF", "sub": "#E59AA5", "accent": "#FF3B5C"},
+            {"bg": "#C8102E", "bg2": "#E33A57", "fg": "#FFFFFF", "sub": "#FFD4DB", "accent": "#FFE08A"},
+            {"bg": "#FF5A3C", "bg2": "#E0285F", "fg": "#FFFFFF", "sub": "#FFE0DC", "accent": "#FFFFFF"},
+            {"bg": "#7A1228", "bg2": "#C8102E", "fg": "#FFFFFF", "sub": "#F2B8C2", "accent": "#FFD86F"},
+            {"bg": "#5A1030", "bg2": "#A01246", "fg": "#FFFFFF", "sub": "#F0AEC6", "accent": "#FF6FA3"},
         ],
     },
 }
@@ -76,15 +77,34 @@ BRANDS = {
 def variant(seed: int, username: str) -> dict:
     b = BRANDS[username]
     sc = dict(b["schemes"][seed % len(b["schemes"])])
-    # 같은 스킴이라도 배경 명도를 미세하게 흔들어 매번 다르게
-    jl = [-0.015, 0.0, 0.02, 0.035][(seed // 4) % 4]
+    jl = [-0.012, 0.0, 0.018, 0.03][(seed // 4) % 4]  # 배경 톤 미세 변화
     sc["bg"] = _shift(sc["bg"], dl=jl)
+    sc["bg2"] = _shift(sc["bg2"], dl=jl)
     sc["accent_style"] = ["bar", "underline", "dot"][seed % 3]
     sc["align"] = ["center", "upper"][(seed // 3) % 2]
     sc["quote"] = bool((seed // 2) % 2)
     sc["big_size"] = 80 + [0, 4, -4, 8][seed % 4]
     sc["header"] = b["header"]
     return sc
+
+
+def _rgb(hex_color: str):
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _gradient_bg(c1: str, c2: str) -> Image.Image:
+    """위(c1)→아래(c2) 세로 그라데이션 배경."""
+    r1, g1, b1 = _rgb(c1)
+    r2, g2, b2 = _rgb(c2)
+    col = Image.new("RGB", (1, H))
+    px = col.load()
+    for y in range(H):
+        t = y / (H - 1)
+        px[0, y] = (round(r1 + (r2 - r1) * t),
+                    round(g1 + (g2 - g1) * t),
+                    round(b1 + (b2 - b1) * t))
+    return col.resize((W, H))
 
 
 def _tracked(d, xy, text, f, fill, tracking=8):
@@ -114,7 +134,7 @@ def _accent(d, v, y_top):
 
 
 def _card(v, big, small, page, total, handle, is_cover, is_last):
-    img = Image.new("RGB", (W, H), v["bg"])
+    img = _gradient_bg(v["bg"], v.get("bg2", v["bg"]))
     d = ImageDraw.Draw(img)
 
     _accent(d, v, M)

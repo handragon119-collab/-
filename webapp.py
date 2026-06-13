@@ -13,7 +13,7 @@ import json
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -1216,6 +1216,59 @@ def api_accounts_verify():
     if changed:
         accounts._save_raw(items)
     return jsonify({"ok": True, "report": report})
+
+
+_PLAN_USERNAMES = {"pnent_official", "pm_ent2026", "moki_ent"}
+
+
+@app.post("/api/plan/resync")
+def api_plan_resync():
+    """엔터 3계정의 예약 글을 prepared_posts.json의 최신 디자인·문구로 갱신.
+
+    이미 예약된(발행 전) 플랜 글을 지우고, 아직 시간이 안 지난 플랜 항목을
+    새 카드뉴스·새 본문으로 다시 예약한다. 이미 발행된 글은 건드리지 않는다.
+    """
+    from threads_auto import prepared, scheduled_posts
+    accs = accounts.list_accounts()
+    ent_ids = {a["id"] for a in accs
+               if (a.get("username") or "").lstrip("@").lower() in _PLAN_USERNAMES}
+    acc_by_uname = {(a.get("username") or "").lstrip("@").lower(): a for a in accs}
+    deleted = 0
+    for it in scheduled_posts.list_all():
+        if it.get("status") == "pending" and set(it.get("account_ids") or []) & ent_ids:
+            scheduled_posts.delete(it["id"])
+            deleted += 1
+    try:
+        entries = json.loads(prepared.PREPARED_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        entries = []
+    now = datetime.now()
+    done = prepared._imported()
+    added, skipped = 0, 0
+    for e in entries:
+        eid = str(e.get("id", ""))
+        if not eid.startswith("plan-"):
+            continue
+        acc = acc_by_uname.get((e.get("username") or "").lstrip("@").lower())
+        if not acc:
+            continue
+        try:
+            dt = datetime.strptime(e.get("run_at", ""), "%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+        done.add(eid)  # 갱신 후엔 일반 자동예약이 또 안 넣게 표시
+        if dt <= now + timedelta(minutes=1):
+            skipped += 1   # 이미 지난 슬롯은 다시 안 올림(중복 방지)
+            continue
+        scheduled_posts.add(
+            e["text"], int(dt.timestamp() * 1000), [acc["id"]],
+            topic=e.get("topic"), image_files=e.get("image_files") or [],
+            preview_urls=e.get("preview_urls") or [], source_id=eid)
+        added += 1
+    prepared._save_imported(done)
+    if not ent_ids:
+        return jsonify({"ok": False, "error": "엔터 3계정(@pnent_official/@pm_ent2026/@moki_ent)을 찾지 못했어요."}), 400
+    return jsonify({"ok": True, "deleted": deleted, "added": added, "skipped_past": skipped})
 
 
 @app.get("/api/selftest")

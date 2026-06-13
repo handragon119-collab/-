@@ -33,10 +33,12 @@ def add(text: str, run_at_ms: int, account_ids: list[str] | None = None,
         image_urls: list[str] | None = None, video_url: str | None = None,
         topic: str | None = None, preview_urls: list[str] | None = None,
         video_preview: str | None = None,
-        image_files: list[str] | None = None) -> dict:
+        image_files: list[str] | None = None,
+        source_id: str | None = None) -> dict:
     items = _load()
     item = {
         "id": uuid.uuid4().hex[:8],
+        "source_id": source_id,  # prepared 글 id (플랜 갱신 시 매칭용)
         "text": text,
         "run_at": int(run_at_ms),
         "account_ids": account_ids or [],
