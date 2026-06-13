@@ -65,10 +65,10 @@ BRANDS = {
     "moki_ent": {
         "header": "MOKI ENTERTAINMENT",
         "schemes": [
-            {"bg": "#C8102E", "bg2": "#E33A57", "fg": "#FFFFFF", "sub": "#FFD4DB", "accent": "#FFE08A"},
-            {"bg": "#FF5A3C", "bg2": "#E0285F", "fg": "#FFFFFF", "sub": "#FFE0DC", "accent": "#FFFFFF"},
-            {"bg": "#7A1228", "bg2": "#C8102E", "fg": "#FFFFFF", "sub": "#F2B8C2", "accent": "#FFD86F"},
-            {"bg": "#5A1030", "bg2": "#A01246", "fg": "#FFFFFF", "sub": "#F0AEC6", "accent": "#FF6FA3"},
+            {"bg": "#C8102E", "bg2": "#E8434E", "fg": "#FFFFFF", "sub": "#FFD4D4", "accent": "#FFE08A"},
+            {"bg": "#FF7A18", "bg2": "#FF3D6E", "fg": "#FFFFFF", "sub": "#FFE6D9", "accent": "#FFFFFF"},
+            {"bg": "#D6336C", "bg2": "#A61E4D", "fg": "#FFFFFF", "sub": "#FFD0E0", "accent": "#FFE08A"},
+            {"bg": "#6A1B4D", "bg2": "#B5179E", "fg": "#FFFFFF", "sub": "#F2C6E6", "accent": "#FF8FB0"},
         ],
     },
 }
