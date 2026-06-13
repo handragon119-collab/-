@@ -1175,6 +1175,36 @@ def api_scheduled_delete():
     return jsonify({"ok": True})
 
 
+@app.post("/api/accounts/verify")
+def api_accounts_verify():
+    """계정별 토큰을 점검하고, user_id가 토큰과 다르면 자동 교정합니다."""
+    items = accounts.list_accounts()
+    report = []
+    changed = False
+    for a in items:
+        label = a.get("label") or "계정"
+        try:
+            prof = ThreadsClient(a.get("user_id", ""), a.get("access_token", "")).get_profile()
+            real_id = str(prof.get("id") or "").strip()
+            uname = prof.get("username", "")
+            if real_id and real_id != str(a.get("user_id", "")).strip():
+                a["user_id"] = real_id  # 토큰의 실제 id로 교정
+                changed = True
+                report.append({"label": label, "ok": True, "fixed": True,
+                               "username": uname,
+                               "msg": f"user_id를 토큰에 맞게 교정했어요(@{uname})."})
+            else:
+                report.append({"label": label, "ok": True, "fixed": False,
+                               "username": uname, "msg": f"정상(@{uname})"})
+        except Exception as exc:  # noqa: BLE001
+            report.append({"label": label, "ok": False,
+                           "msg": "토큰 만료/무효 또는 권한 부족 — 토큰을 다시 발급해 넣어주세요. "
+                                  + str(exc)[:160]})
+    if changed:
+        accounts._save_raw(items)
+    return jsonify({"ok": True, "report": report})
+
+
 @app.get("/api/selftest")
 def api_selftest():
     """이미지 호스팅이 되는지 즉시 점검(작은 테스트 이미지 업로드)."""

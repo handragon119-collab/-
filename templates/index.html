@@ -252,6 +252,8 @@
       <label>등록된 계정</label>
       <div id="accountList"><p class="hint">불러오는 중…</p></div>
       <button class="ghost" id="refreshAccBtn" style="margin-top:8px">🔄 계정 정보(아이디·사진) 새로고침</button>
+      <button class="ghost" id="verifyAccBtn" style="margin-top:8px">🔑 토큰 점검 (발행 안 될 때)</button>
+      <div id="verifyResult"></div>
       <hr class="divider" />
       <label>새 계정 추가</label>
       <input type="text" id="accLabel" placeholder="계정 이름(메모, 예: 김피엔 / 우리사진관)" style="margin-bottom:8px" />
@@ -536,6 +538,14 @@ async function loadAccounts() {
   });
 }
 $("refreshAccBtn").onclick = async () => { toast("정보 가져오는 중…"); const r = await api("/api/accounts/refresh", { method: "POST" }); if (r.ok) { toast("새로고침 완료", "ok"); loadAccounts(); loadStatus(); } };
+$("verifyAccBtn").onclick = async () => {
+  $("verifyResult").innerHTML = '<p class="hint"><span class="spin"></span>토큰 점검 중…</p>';
+  const r = await api("/api/accounts/verify", { method: "POST" });
+  if (!r.ok) { $("verifyResult").innerHTML = '<p class="hint">점검 실패</p>'; return; }
+  $("verifyResult").innerHTML = r.report.map((x) =>
+    `<div class="rep ${x.ok ? "" : "fail"}" style="margin:8px 0"><div class="lbl">${x.ok ? (x.fixed ? "🔧 교정됨" : "✅ 정상") : "❌ 문제"} · ${esc(x.label)}</div><div class="cmt">${esc(x.msg)}</div></div>`).join("");
+  if (r.report.some((x) => x.fixed)) { toast("user_id를 교정했어요. 다시 발행해보세요.", "ok"); loadAccounts(); }
+};
 $("addAccBtn").onclick = async () => {
   const label = $("accLabel").value.trim(), user_id = $("accUserId").value.trim(), access_token = $("accToken").value.trim();
   const persona = $("accPersona").value;

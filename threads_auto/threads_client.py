@@ -35,6 +35,28 @@ class ThreadsClient:
             )
         return resp.json()
 
+    def _ensure_uid(self) -> str:
+        """게시 전, 토큰에 실제로 연결된 user_id로 보정한다.
+
+        저장된 user_id가 토큰과 안 맞으면 'Object with ID ... does not exist'
+        같은 400이 나므로, /me 로 토큰의 진짜 id를 받아 그걸 사용한다.
+        토큰 자체가 만료/무효면 여기서 명확한 에러를 낸다.
+        """
+        if getattr(self, "_uid_checked", False):
+            return self.user_id
+        try:
+            prof = self.get_profile()
+        except ThreadsError as exc:
+            raise ThreadsError(
+                "토큰이 만료됐거나 무효예요(또는 권한 부족). 계정 탭에서 "
+                "토큰을 다시 발급해 넣어주세요. 원인: " + str(exc)
+            ) from exc
+        rid = str(prof.get("id") or "").strip()
+        if rid:
+            self.user_id = rid
+        self._uid_checked = True
+        return self.user_id
+
     def get_profile(self) -> dict:
         """내 프로필(아이디·사진 등)을 가져옵니다."""
         params = {
@@ -263,6 +285,7 @@ class ThreadsClient:
     def post_media(self, text: str, image_urls: list[str] | None = None,
                    video_url: str | None = None) -> str:
         """미디어 종류에 맞춰 게시합니다(자동 분기)."""
+        self._ensure_uid()  # 토큰의 실제 id로 보정(불일치/만료 즉시 감지)
         if video_url:
             return self.post_video(text, video_url)
         urls = image_urls or []
