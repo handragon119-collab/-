@@ -1184,22 +1184,35 @@ def api_accounts_verify():
     for a in items:
         label = a.get("label") or "계정"
         try:
-            prof = ThreadsClient(a.get("user_id", ""), a.get("access_token", "")).get_profile()
-            real_id = str(prof.get("id") or "").strip()
-            uname = prof.get("username", "")
-            if real_id and real_id != str(a.get("user_id", "")).strip():
-                a["user_id"] = real_id  # 토큰의 실제 id로 교정
-                changed = True
-                report.append({"label": label, "ok": True, "fixed": True,
-                               "username": uname,
-                               "msg": f"user_id를 토큰에 맞게 교정했어요(@{uname})."})
-            else:
-                report.append({"label": label, "ok": True, "fixed": False,
-                               "username": uname, "msg": f"정상(@{uname})"})
+            client = ThreadsClient(a.get("user_id", ""), a.get("access_token", ""))
+            prof = client.get_profile()  # ① 읽기(토큰 유효성) 테스트
         except Exception as exc:  # noqa: BLE001
             report.append({"label": label, "ok": False,
-                           "msg": "토큰 만료/무효 또는 권한 부족 — 토큰을 다시 발급해 넣어주세요. "
-                                  + str(exc)[:160]})
+                           "msg": "토큰 만료/무효 — 토큰을 다시 발급해 넣어주세요. " + str(exc)[:140]})
+            continue
+        real_id = str(prof.get("id") or "").strip()
+        uname = prof.get("username", "")
+        fixed = False
+        if real_id and real_id != str(a.get("user_id", "")).strip():
+            a["user_id"] = real_id  # 토큰의 실제 id로 교정
+            changed = True
+            fixed = True
+        # ② 게시 권한 테스트: 텍스트 컨테이너를 '생성만' 해본다(게시 안 함 → 글 안 올라감).
+        try:
+            client.user_id = real_id or client.user_id
+            client.create_text_container("(권한 점검용 — 게시되지 않습니다)")
+            report.append({"label": label, "ok": True, "fixed": fixed, "username": uname,
+                           "msg": (f"@{uname} — 게시 권한까지 정상"
+                                   + (" · user_id 교정함" if fixed else ""))})
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+            if "permission" in msg.lower() or "does not exist" in msg.lower() or "publish" in msg.lower():
+                report.append({"label": label, "ok": False, "fixed": fixed,
+                               "msg": f"@{uname} — 읽기는 되는데 '게시 권한(threads_content_publish)'이 "
+                                      "없어요. 앱 권한에 게시 권한을 추가해 토큰을 다시 발급해야 해요."})
+            else:
+                report.append({"label": label, "ok": False, "fixed": fixed,
+                               "msg": f"@{uname} — 게시 테스트 실패: {msg[:160]}"})
     if changed:
         accounts._save_raw(items)
     return jsonify({"ok": True, "report": report})
