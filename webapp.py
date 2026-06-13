@@ -945,12 +945,16 @@ def _scheduled_publish_loop():
     from threads_auto import scheduled_posts
     while True:
         try:
-            for item in scheduled_posts.due():
+            due = scheduled_posts.due()
+            for item in due:
                 all_accs = accounts.list_accounts()
                 ids = item.get("account_ids") or []
                 targets = [a for a in all_accs if a["id"] in ids] if ids else all_accs
+                head = (item.get("text") or "").splitlines()[0][:24]
+                print(f"  📤 발행 시도: {head}… ({item['id']})")
                 if not targets:
                     scheduled_posts.mark(item["id"], "failed", {"summary": "대상 계정이 없어요."})
+                    print("     ❌ 대상 계정이 없어요(계정 탭 확인).")
                     continue
                 try:
                     results = _publish(item["text"], _fresh_image_urls(item),
@@ -964,8 +968,10 @@ def _scheduled_publish_loop():
                         item["id"], "done" if success else "failed",
                         {"summary": summary, "results": results},
                     )
+                    print(f"     {'✅' if success else '❌'} {summary}")
                 except Exception as exc:  # noqa: BLE001
                     scheduled_posts.mark(item["id"], "failed", {"summary": "오류: " + str(exc)})
+                    print(f"     ❌ 오류: {exc}")
         except Exception:  # noqa: BLE001
             pass
         for _ in range(30):  # 30초마다 점검
