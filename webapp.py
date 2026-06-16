@@ -1271,6 +1271,43 @@ def api_plan_resync():
     return jsonify({"ok": True, "deleted": deleted, "added": added, "skipped_past": skipped})
 
 
+@app.get("/api/scheduled/diag")
+def api_scheduled_diag():
+    """자동 발행이 안 될 때 원인 진단용 요약(브라우저로 열어 확인)."""
+    from threads_auto import scheduled_posts
+    items = scheduled_posts.list_all()
+    now = int(time.time() * 1000)
+    by_status = {}
+    for it in items:
+        by_status[it.get("status", "?")] = by_status.get(it.get("status", "?"), 0) + 1
+    pending = [i for i in items if i.get("status") == "pending"]
+    overdue = [i for i in pending if i.get("run_at", 0) <= now]
+    nxt = min((i for i in pending if i.get("run_at", 0) > now),
+              key=lambda x: x["run_at"], default=None)
+    fails = [i for i in items if i.get("status") == "failed"][-6:]
+    # 호스팅 점검
+    try:
+        host_url = _host_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64, "png")
+        host = {"ok": True, "url": host_url[:60]}
+    except Exception as exc:  # noqa: BLE001
+        host = {"ok": False, "error": str(exc)[:200]}
+    def when(ms):
+        return datetime.fromtimestamp(ms / 1000).strftime("%m/%d %H:%M") if ms else None
+    return jsonify({
+        "ok": True,
+        "now": when(now),
+        "watcher_started": _publish_watcher["started"],
+        "counts": by_status,
+        "overdue_pending": len(overdue),   # 시각 지났는데 아직 발행 안 된 것(워처 꺼져있던 신호)
+        "next_pending": {"run_at": when(nxt["run_at"]), "accounts": nxt.get("account_ids")} if nxt else None,
+        "hosting": host,
+        "recent_failures": [{"run_at": when(i.get("run_at")),
+                             "summary": (i.get("result") or {}).get("summary", "")[:200]}
+                            for i in fails],
+        "accounts": len(accounts.list_accounts()),
+    })
+
+
 @app.get("/api/selftest")
 def api_selftest():
     """이미지 호스팅이 되는지 즉시 점검(작은 테스트 이미지 업로드)."""
