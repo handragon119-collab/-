@@ -1271,6 +1271,102 @@ def api_plan_resync():
     return jsonify({"ok": True, "deleted": deleted, "added": added, "skipped_past": skipped})
 
 
+@app.post("/api/publish_overdue")
+def api_publish_overdue():
+    """시각이 지났는데 아직 안 올라간 예약 글을 지금 전부 발행."""
+    from threads_auto import scheduled_posts
+    now = int(time.time() * 1000)
+    todo = [i for i in scheduled_posts.list_all()
+            if i.get("status") == "pending" and i.get("run_at", 0) <= now]
+    done = fail = 0
+    for it in todo:
+        ids = it.get("account_ids") or []
+        targets = [a for a in accounts.list_accounts() if a["id"] in ids] if ids else accounts.list_accounts()
+        if not targets:
+            scheduled_posts.mark(it["id"], "failed", {"summary": "대상 계정 없음"}); fail += 1; continue
+        try:
+            results = _publish(it["text"], _fresh_image_urls(it), it.get("video_url"), targets, it.get("topic"))
+            ok = sum(1 for r in results if r.get("ok"))
+            err = next((r.get("error") for r in results if not r.get("ok")), "")
+            scheduled_posts.mark(it["id"], "done" if ok else "failed",
+                                 {"summary": f"{ok}/{len(results)} 게시" + (f" · {err[:160]}" if not ok else "")})
+            done += 1 if ok else 0
+            fail += 0 if ok else 1
+        except Exception as exc:  # noqa: BLE001
+            scheduled_posts.mark(it["id"], "failed", {"summary": "오류: " + str(exc)[:160]}); fail += 1
+    return jsonify({"ok": True, "tried": len(todo), "done": done, "failed": fail})
+
+
+@app.get("/health")
+def health_page():
+    """자동 발행 상태를 한국어로 보여주는 진단 화면(브라우저로 열기)."""
+    from threads_auto import scheduled_posts
+    now = int(time.time() * 1000)
+    items = scheduled_posts.list_all()
+    pending = [i for i in items if i.get("status") == "pending"]
+    overdue = [i for i in pending if i.get("run_at", 0) <= now]
+    done_n = sum(1 for i in items if i.get("status") == "done")
+    fail_n = sum(1 for i in items if i.get("status") == "failed")
+    nxt = min((i for i in pending if i.get("run_at", 0) > now), key=lambda x: x["run_at"], default=None)
+    try:
+        _host_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64, "png")
+        host_ok, host_msg = True, "정상"
+    except Exception as exc:  # noqa: BLE001
+        host_ok, host_msg = False, str(exc)[:200]
+    accs = []
+    for a in accounts.list_accounts():
+        label = (a.get("username") and "@" + a["username"]) or a.get("label", "계정")
+        try:
+            cl = ThreadsClient(a.get("user_id", ""), a.get("access_token", ""))
+            cl.get_profile()
+            cl._ensure_uid()
+            cl.create_text_container("(상태 점검용 — 게시되지 않습니다)")
+            accs.append((label, True, "발행 가능"))
+        except Exception as exc:  # noqa: BLE001
+            m = str(exc)
+            reason = "토큰 만료/무효 또는 게시권한 없음" if ("permission" in m.lower() or "does not exist" in m.lower() or "토큰" in m) else m[:140]
+            accs.append((label, False, reason))
+    bad_acc = [a for a in accs if not a[1]]
+    if not host_ok:
+        verdict, vcolor = "이미지 호스팅이 막혔어요. (네트워크/호스트 문제)", "#E23B5A"
+    elif bad_acc:
+        verdict, vcolor = f"{len(bad_acc)}개 계정 토큰 문제 — 토큰 재발급이 필요해요.", "#E23B5A"
+    elif overdue:
+        verdict, vcolor = f"밀린 글 {len(overdue)}개 — 아래 '지금 전부 발행' 버튼을 눌러주세요.", "#F5A623"
+    else:
+        verdict, vcolor = "정상이에요. 다음 예약 시각을 기다리는 중!", "#2EC47E"
+
+    def when(ms):
+        return datetime.fromtimestamp(ms / 1000).strftime("%m/%d %H:%M") if ms else "-"
+    rows = "".join(
+        f"<tr><td>{esc(l)}</td><td style='color:{'#2EC47E' if ok else '#E23B5A'}'>"
+        f"{'✅ 발행 가능' if ok else '❌ ' + esc(m)}</td></tr>" for l, ok, m in accs)
+    html = f"""<!doctype html><html><head><meta charset=utf-8>
+<meta name=viewport content='width=device-width,initial-scale=1'>
+<title>발행 상태 점검</title>
+<style>body{{font-family:-apple-system,sans-serif;background:#0e0f13;color:#eee;padding:20px;line-height:1.6}}
+.card{{background:#181a20;border:1px solid #2a2d36;border-radius:14px;padding:16px;margin:12px 0}}
+.v{{font-size:18px;font-weight:800;color:{vcolor}}} table{{width:100%;border-collapse:collapse}}
+td{{padding:8px;border-bottom:1px solid #2a2d36;font-size:14px}} h2{{font-size:15px;margin:0 0 8px}}
+button{{background:#7c5cff;color:#fff;border:0;padding:14px 20px;border-radius:12px;font-size:16px;font-weight:700;width:100%;cursor:pointer}}
+.k{{color:#9aa0ab}}</style></head><body>
+<div class=card><div class=v>{esc(verdict)}</div></div>
+<div class=card><h2>📊 예약 현황</h2>
+<div class=k>지금: {when(now)} · 워처(자동발행기): {'켜짐 ✅' if _publish_watcher['started'] else '꺼짐 ❌'}</div>
+<div>발행 대기: <b>{len(pending)}</b>개 · 그중 밀린 글: <b style='color:#F5A623'>{len(overdue)}</b>개</div>
+<div>발행 완료: {done_n}개 · 실패: {fail_n}개</div>
+<div class=k>다음 예약: {when(nxt['run_at']) if nxt else '-'}</div></div>
+<div class=card><h2>🌐 이미지 호스팅</h2><div style='color:{'#2EC47E' if host_ok else '#E23B5A'}'>{'✅ ' if host_ok else '❌ '}{esc(host_msg)}</div></div>
+<div class=card><h2>🔑 계정 토큰</h2><table>{rows}</table></div>
+<div class=card><button onclick="go()">🚀 밀린 글 {len(overdue)}개 지금 전부 발행</button>
+<div id=r class=k style='margin-top:10px'></div></div>
+<script>async function go(){{document.getElementById('r').textContent='발행 중…';
+const x=await fetch('/api/publish_overdue',{{method:'POST'}}).then(r=>r.json());
+document.getElementById('r').textContent='시도 '+x.tried+'개 · 성공 '+x.done+' · 실패 '+x.failed+' (새로고침하면 갱신)';}}</script>
+</body></html>"""
+    return html
+
+
 @app.get("/api/scheduled/diag")
 def api_scheduled_diag():
     """자동 발행이 안 될 때 원인 진단용 요약(브라우저로 열어 확인)."""
