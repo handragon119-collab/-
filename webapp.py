@@ -1247,7 +1247,7 @@ def api_plan_resync():
     added, skipped = 0, 0
     for e in entries:
         eid = str(e.get("id", ""))
-        if not eid.startswith("plan-"):
+        if not (eid.startswith("plan-") or eid.startswith("rcrt-")):
             continue
         acc = acc_by_uname.get((e.get("username") or "").lstrip("@").lower())
         if not acc:
