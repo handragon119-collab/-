@@ -1,0 +1,36 @@
+name: 스레드 예약 발행 (24시간)
+
+# 30분마다 깨어나서 '발행 시각이 된' 예약 글을 올린다. 맥을 켜둘 필요가 없다.
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # UTC 기준 30분마다
+  workflow_dispatch:           # 수동 실행 버튼
+
+permissions:
+  contents: write              # 발행 기록(cloud_state) 커밋용
+
+concurrency:
+  group: threads-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests tzdata
+      - name: 예약 글 발행
+        env:
+          THREADS_ACCOUNTS: ${{ secrets.THREADS_ACCOUNTS }}
+        run: python tools/cloud_publish.py
+      - name: 발행 기록 저장
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cloud_state/posted.json
+          git commit -m "chore: 발행 기록 업데이트 [skip ci]" || echo "변경 없음"
+          git pull --rebase --autostash origin ${{ github.ref_name }} || true
+          git push || echo "푸시할 것 없음"
