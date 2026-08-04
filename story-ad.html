@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instagram Story Ad — SUMMER SALE</title>
+<style>
+  :root{
+    --ink:#141118;
+    --cream:#f4efe9;
+    --accent:#ff5a3c;      /* trendy coral */
+    --accent2:#ffd23f;     /* warm yellow */
+    --lime:#c8ff4d;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{
+    background:#0c0c10;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Pretendard,"Apple SD Gothic Neo",sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:20px;
+  }
+
+  /* ===== 1080 x 1920 (9:16) story canvas, scaled to viewport ===== */
+  .stage{
+    width:min(92vw, 46.7vh);          /* keeps 9:16 */
+    aspect-ratio:9/16;
+    position:relative;
+    border-radius:26px;
+    overflow:hidden;
+    box-shadow:0 40px 90px -20px rgba(0,0,0,.7);
+    isolation:isolate;
+  }
+
+  /* trendy gradient-mesh background */
+  .bg{position:absolute;inset:0;z-index:0;
+    background:
+      radial-gradient(60% 45% at 18% 12%, #ff8a5c 0%, transparent 60%),
+      radial-gradient(55% 40% at 88% 8%,  #ffd23f 0%, transparent 55%),
+      radial-gradient(70% 55% at 85% 92%, #ff5a3c 0%, transparent 60%),
+      radial-gradient(65% 50% at 8% 88%,  #ff4d7d 0%, transparent 60%),
+      linear-gradient(160deg,#fff3e6,#ffe4d6 40%,#ffd9c7);
+    background-color:#ffe9dc;
+  }
+  /* film grain */
+  .grain{position:absolute;inset:0;z-index:1;opacity:.10;mix-blend-mode:overlay;pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+
+  .content{position:absolute;inset:0;z-index:2;
+    display:flex;flex-direction:column;
+    padding:6.2% 6%;}
+
+  /* ---- IG story chrome ---- */
+  .bars{display:flex;gap:5px;margin-bottom:5.2%}
+  .bars i{flex:1;height:3px;border-radius:3px;background:rgba(20,17,24,.22)}
+  .bars i:first-child{background:rgba(20,17,24,.9)}
+  .topbar{display:flex;align-items:center;gap:9px;color:var(--ink);margin-bottom:7%}
+  .avatar{width:34px;height:34px;border-radius:50%;
+    background:conic-gradient(from 210deg,#ff5a3c,#ffd23f,#ff4d7d,#ff5a3c);
+    display:grid;place-items:center;font-size:15px}
+  .avatar span{width:28px;height:28px;border-radius:50%;background:#fff;display:grid;place-items:center}
+  .handle{font-weight:800;font-size:15px;letter-spacing:-.01em}
+  .handle small{display:block;font-weight:600;font-size:11px;opacity:.55;letter-spacing:.02em}
+  .sponsored{margin-left:auto;font-size:10.5px;font-weight:700;opacity:.5;text-transform:uppercase;letter-spacing:.08em}
+
+  /* ---- headline ---- */
+  .kicker{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;
+    background:var(--ink);color:var(--cream);
+    font-weight:800;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;
+    padding:8px 13px;border-radius:100px;margin-bottom:4.5%}
+  .kicker b{color:var(--lime)}
+  h1{color:var(--ink);font-weight:900;letter-spacing:-.035em;line-height:.9;
+    font-size:clamp(34px,10.4vw,74px)}
+  h1 .out{-webkit-text-stroke:2px var(--ink);color:transparent}
+  h1 em{font-style:italic;color:var(--accent)}
+  .sub{margin-top:3.6%;color:var(--ink);opacity:.72;font-size:clamp(12px,3.4vw,17px);
+    font-weight:600;line-height:1.45;max-width:82%}
+
+  /* ---- 2x2 photo grid ---- */
+  .grid{margin-top:auto;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;
+    gap:9px;aspect-ratio:1/1;}
+  .ph{position:relative;border-radius:18px;overflow:hidden;
+    box-shadow:0 12px 30px -12px rgba(20,17,24,.45)}
+  .ph::after{content:attr(data-tag);position:absolute;left:9px;bottom:9px;
+    font-size:10px;font-weight:800;letter-spacing:.02em;color:#fff;
+    background:rgba(20,17,24,.42);backdrop-filter:blur(4px);
+    padding:4px 8px;border-radius:100px}
+  .ph img{width:100%;height:100%;object-fit:cover;display:block}
+
+  /* featured = bottom-right (the "right photo") */
+  .ph.feature{outline:3px solid var(--ink);outline-offset:0}
+  .ph.feature .badge{position:absolute;top:9px;right:9px;z-index:3;
+    background:var(--accent);color:#fff;font-weight:900;font-size:11px;
+    padding:6px 10px;border-radius:100px;letter-spacing:.02em;
+    box-shadow:0 6px 16px -4px rgba(255,90,60,.8)}
+  .ph.feature::after{background:var(--ink);color:var(--lime)}
+
+  /* ---- CTA ---- */
+  .cta{margin-top:6%;display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--ink)}
+  .swipe{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;opacity:.7;
+    display:flex;align-items:center;gap:6px}
+  .swipe .arw{animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  .btn{width:100%;text-align:center;background:var(--ink);color:var(--cream);
+    font-weight:900;font-size:clamp(14px,4vw,19px);letter-spacing:.01em;
+    padding:16px;border-radius:100px;
+    box-shadow:0 14px 30px -10px rgba(20,17,24,.6)}
+  .btn span{color:var(--accent2)}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="bg"></div>
+    <div class="grain"></div>
+
+    <div class="content">
+      <div class="bars"><i></i><i></i><i></i><i></i></div>
+
+      <div class="topbar">
+        <div class="avatar"><span>🛍️</span></div>
+        <div class="handle">the.label<small>@thelabel.official</small></div>
+        <div class="sponsored">Sponsored</div>
+      </div>
+
+      <div class="kicker">🔥 SUMMER DROP · <b>최대 70%</b></div>
+      <h1><span class="out">MID</span><br><em>SEASON</em><br>SALE.</h1>
+      <p class="sub">지금 가장 핫한 룩만 골랐어요.<br>오늘 밤 자정까지, 놓치면 후회하는 딱 하루.</p>
+
+      <!-- 2x2 photo grid : bottom-right = featured -->
+      <div class="grid">
+        <div class="ph" data-tag="NEW IN"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffb199'/%3E%3Cstop offset='1' stop-color='%23ff5a3c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23a)'/%3E%3Ccircle cx='300' cy='120' r='60' fill='%23ffffff' opacity='.25'/%3E%3C/svg%3E"></div>
+        <div class="ph" data-tag="BEST"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cdefs%3E%3ClinearGradient id='b' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffd23f'/%3E%3Cstop offset='1' stop-color='%23ff8a5c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23b)'/%3E%3Crect x='60' y='200' width='280' height='140' rx='20' fill='%23ffffff' opacity='.22'/%3E%3C/svg%3E"></div>
+        <div class="ph" data-tag="TREND"><img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cdefs%3E%3ClinearGradient id='c' x1='0' y1='1' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%23ff4d7d'/%3E%3Cstop offset='1' stop-color='%23ffb199'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23c)'/%3E%3Ccircle cx='120' cy='280' r='80' fill='%23ffffff' opacity='.2'/%3E%3C/svg%3E"></div>
+
+        <!-- ⭐ 오른쪽 아래 = 메인(피처드) 사진 -->
+        <div class="ph feature" data-tag="PICK OF THE DROP">
+          <div class="badge">MAIN ✦</div>
+          <img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cdefs%3E%3ClinearGradient id='d' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23141118'/%3E%3Cstop offset='.6' stop-color='%233a2b4d'/%3E%3Cstop offset='1' stop-color='%23ff5a3c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='400' height='400' fill='url(%23d)'/%3E%3Ccircle cx='280' cy='150' r='95' fill='%23c8ff4d' opacity='.85'/%3E%3Crect x='40' y='250' width='170' height='120' rx='18' fill='%23ffffff' opacity='.15'/%3E%3C/svg%3E">
+        </div>
+      </div>
+
+      <div class="cta">
+        <div class="swipe"><span class="arw">↑</span> 위로 밀어서 쇼핑하기</div>
+        <div class="btn">지금 <span>세일 보러가기</span> →</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
