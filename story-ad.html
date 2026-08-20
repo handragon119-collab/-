@@ -60,7 +60,16 @@
   .avatar span{width:28px;height:28px;border-radius:50%;background:#fff;display:grid;place-items:center}
   .handle{font-weight:800;font-size:15px;letter-spacing:-.01em}
   .handle small{display:block;font-weight:600;font-size:11px;opacity:.55;letter-spacing:.02em}
-  .sponsored{margin-left:auto;font-size:10.5px;font-weight:700;opacity:.5;text-transform:uppercase;letter-spacing:.08em}
+  .sponsored{margin-left:12px;font-size:10.5px;font-weight:700;opacity:.5;text-transform:uppercase;letter-spacing:.08em}
+  /* music toggle */
+  .music{margin-left:auto;width:38px;height:38px;flex:0 0 auto;border:none;cursor:pointer;
+    border-radius:50%;background:rgba(20,17,24,.9);color:#fff;font-size:16px;line-height:1;
+    display:grid;place-items:center;box-shadow:0 6px 16px -4px rgba(20,17,24,.5);
+    transition:transform .15s,background .2s}
+  .music:active{transform:scale(.9)}
+  .music.on{background:var(--accent);box-shadow:0 0 0 4px rgba(255,90,60,.28),0 6px 16px -4px rgba(255,90,60,.6);
+    animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
 
   /* ---- headline ---- */
   .kicker{display:inline-flex;align-items:center;gap:7px;align-self:flex-start;
@@ -118,6 +127,7 @@
       <div class="topbar">
         <div class="avatar"><span>🛍️</span></div>
         <div class="handle">the.label<small>@thelabel.official</small></div>
+        <button id="music" class="music" aria-label="배경음악 켜기/끄기" title="신나는 음악 ON/OFF">🎵</button>
         <div class="sponsored">Sponsored</div>
       </div>
 
@@ -144,5 +154,74 @@
       </div>
     </div>
   </div>
+
+  <script>
+  /* ===== 신나는 배경음악 (Web Audio 합성 · 밝은 장조 팝 루프) ===== */
+  (() => {
+    const btn = document.getElementById('music');
+    const BPM = 132, EIGHTH = 60 / BPM / 2;   // 통통 튀는 템포
+    let ctx, master, filter, timer = null, step = 0, playing = false;
+
+    // C major – 밝고 신나는 진행: C · G · Am · F
+    const CHORDS = [[0,4,7],[7,11,14],[9,12,16],[5,9,12]];
+    const BASS   = [-24,-17,-15,-19];                 // 각 코드 루트(낮은 옥타브)
+    const RIFF   = [12,7,9,12,16,12,9,7];             // 밝은 펜타토닉 훅
+    const f = n => 261.63 * Math.pow(2, n / 12);      // C4 기준 주파수
+
+    function tone(freq, t, dur, type, gain){
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type; o.frequency.value = freq;
+      o.connect(g); g.connect(filter);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gain, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t); o.stop(t + dur + 0.03);
+    }
+    function kick(t){
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(48, t + 0.11);
+      g.gain.setValueAtTime(0.9, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.17);
+    }
+    function hat(t){
+      const len = ctx.sampleRate * 0.04;
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3);
+      const s = ctx.createBufferSource(); s.buffer = buf;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 8000;
+      const g = ctx.createGain(); g.gain.value = 0.18;
+      s.connect(hp); hp.connect(g); g.connect(master); s.start(t);
+    }
+
+    function tick(){
+      const t = ctx.currentTime + 0.06;
+      const bar = Math.floor(step / 8) % 4, s = step % 8, ch = CHORDS[bar];
+      if (s % 4 === 0) kick(t);                        // 4/4 킥
+      hat(t);                                          // 8비트 하이햇
+      if (s % 2 === 0) tone(f(BASS[bar]), t, EIGHTH*0.95, 'triangle', 0.34); // 바운스 베이스
+      if (s % 4 === 0) ch.forEach(n => tone(f(n), t, EIGHTH*2, 'sawtooth', 0.05)); // 코드 패드
+      tone(f(RIFF[s] + (bar ? ch[0] : 0)), t, EIGHTH*0.9, 'square', 0.13);  // 밝은 리프
+      step++;
+    }
+
+    function start(){
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain(); master.gain.value = 0.32;
+      filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 5200;
+      filter.connect(master); master.connect(ctx.destination);
+      ctx.resume(); step = 0; tick();
+      timer = setInterval(tick, EIGHTH * 1000);
+      playing = true; btn.classList.add('on'); btn.textContent = '🔊';
+    }
+    function stop(){
+      clearInterval(timer); timer = null;
+      if (master) master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
+      playing = false; btn.classList.remove('on'); btn.textContent = '🎵';
+    }
+    btn.addEventListener('click', () => playing ? stop() : start());
+  })();
+  </script>
 </body>
 </html>
