@@ -165,7 +165,7 @@
     // C major – 밝고 신나는 진행: C · G · Am · F
     const CHORDS = [[0,4,7],[7,11,14],[9,12,16],[5,9,12]];
     const BASS   = [-24,-17,-15,-19];                 // 각 코드 루트(낮은 옥타브)
-    const RIFF   = [12,7,9,12,16,12,9,7];             // 밝은 펜타토닉 훅
+    const RIFF   = [12,12,16,14,12,9,7,9];            // 밝은 펜타토닉 훅
     const f = n => 261.63 * Math.pow(2, n / 12);      // C4 기준 주파수
 
     function tone(freq, t, dur, type, gain){
@@ -185,24 +185,32 @@
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
       o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.17);
     }
-    function hat(t){
-      const len = ctx.sampleRate * 0.04;
+    function noise(t, dur, hpFreq, gain){
+      const len = ctx.sampleRate * dur;
       const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3);
+      for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2);
       const s = ctx.createBufferSource(); s.buffer = buf;
-      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 8000;
-      const g = ctx.createGain(); g.gain.value = 0.18;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = hpFreq;
+      const g = ctx.createGain(); g.gain.value = gain;
       s.connect(hp); hp.connect(g); g.connect(master); s.start(t);
     }
+    const hat  = t => noise(t, 0.04, 8000, 0.16);          // 8비트 하이햇
+    const clap = t => { noise(t, 0.13, 1500, 0.32);        // 백비트 클랩(살짝 겹쳐 두툼하게)
+                        noise(t + 0.012, 0.10, 1500, 0.22); };
 
     function tick(){
       const t = ctx.currentTime + 0.06;
       const bar = Math.floor(step / 8) % 4, s = step % 8, ch = CHORDS[bar];
       if (s % 4 === 0) kick(t);                        // 4/4 킥
-      hat(t);                                          // 8비트 하이햇
+      if (s === 2 || s === 6) clap(t);                 // 백비트 클랩(2·4박)
+      hat(t + (s % 2 ? 0 : 0.0));                      // 8비트 하이햇
+      if (s % 2 === 1) noise(t, 0.03, 9000, 0.07);     // 오프비트 살짝 더 → 그루브
       if (s % 2 === 0) tone(f(BASS[bar]), t, EIGHTH*0.95, 'triangle', 0.34); // 바운스 베이스
-      if (s % 4 === 0) ch.forEach(n => tone(f(n), t, EIGHTH*2, 'sawtooth', 0.05)); // 코드 패드
-      tone(f(RIFF[s] + (bar ? ch[0] : 0)), t, EIGHTH*0.9, 'square', 0.13);  // 밝은 리프
+      if (s % 4 === 0) ch.forEach(n => tone(f(n), t, EIGHTH*2, 'sawtooth', 0.045)); // 코드 패드
+      // 반짝이는 아르페지오 (코드 톤을 위로 훑기)
+      tone(f(ch[s % 3] + 12), t, EIGHTH*0.55, 'triangle', 0.09);
+      // 밝은 리드 리프
+      tone(f(RIFF[s] + (bar ? ch[0] : 0)), t, EIGHTH*0.9, 'square', 0.13);
       step++;
     }
 
