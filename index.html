@@ -39,10 +39,19 @@
   }
   #startBtn:active { transform: scale(0.95); }
   .hidden { display: none !important; }
+  #muteBtn {
+    position: fixed; left: 12px; bottom: 12px; z-index: 20;
+    width: 46px; height: 46px; border: none; border-radius: 50%;
+    background: rgba(255,255,255,.14); color: #fff; font-size: 19px;
+    cursor: pointer; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+    display: grid; place-items: center;
+  }
+  #muteBtn:active { transform: scale(.9); }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<button id="muteBtn" aria-label="소리 켜기/끄기" title="소리 ON/OFF">🔊</button>
 
 <div id="overlay">
   <h1>🍎 과일 받기</h1>
@@ -75,6 +84,77 @@
   const FRUITS = ['🍎', '🍊', '🍇', '🍓', '🍌', '🍑', '🍐'];
   const BOMB = '💣';
   const GOLD = '⭐';
+
+  // ===== 사운드 (Web Audio · 신나는 배경음악 + 효과음) =====
+  let actx, amaster, aFilter, bgmTimer = null, bgmStep = 0, soundOn = true;
+  const AF = n => 261.63 * Math.pow(2, n / 12);          // C4 기준 주파수
+  function audioReady() {
+    if (actx) return;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    amaster = actx.createGain(); amaster.gain.value = 0.30;
+    aFilter = actx.createBiquadFilter(); aFilter.type = 'lowpass'; aFilter.frequency.value = 6500;
+    aFilter.connect(amaster); amaster.connect(actx.destination);
+  }
+  function aTone(freq, t, dur, type, gain) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq; o.connect(g); g.connect(aFilter);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.start(t); o.stop(t + dur + 0.03);
+  }
+  function aNoise(t, dur, hp, gain) {
+    const len = actx.sampleRate * dur, buf = actx.createBuffer(1, len, actx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+    const s = actx.createBufferSource(); s.buffer = buf;
+    const f = actx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+    const g = actx.createGain(); g.gain.value = gain;
+    s.connect(f); f.connect(g); g.connect(amaster); s.start(t);
+  }
+  function aKick(t) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.11);
+    g.gain.setValueAtTime(0.8, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g); g.connect(amaster); o.start(t); o.stop(t + 0.16);
+  }
+  // 밝은 장조 팝 루프: C · G · Am · F, 142 BPM
+  const A_CH = [[0,4,7],[7,11,14],[9,12,16],[5,9,12]];
+  const A_BASS = [-24,-17,-15,-19];
+  const A_RIFF = [12,12,16,14,12,9,7,9];
+  const A_BPM = 142, A_8 = 60 / A_BPM / 2;
+  function bgmTick() {
+    const t = actx.currentTime + 0.06;
+    const bar = Math.floor(bgmStep / 8) % 4, s = bgmStep % 8, ch = A_CH[bar];
+    if (s % 4 === 0) aKick(t);
+    if (s === 2 || s === 6) { aNoise(t, 0.12, 1500, 0.26); aNoise(t + 0.012, 0.09, 1500, 0.18); }
+    aNoise(t, 0.03, 8000, 0.12);
+    if (s % 2 === 0) aTone(AF(A_BASS[bar]), t, A_8 * 0.95, 'triangle', 0.30);
+    if (s % 4 === 0) ch.forEach(n => aTone(AF(n), t, A_8 * 2, 'sawtooth', 0.04));
+    aTone(AF(ch[s % 3] + 12), t, A_8 * 0.5, 'triangle', 0.08);
+    aTone(AF(A_RIFF[s] + (bar ? ch[0] : 0)), t, A_8 * 0.9, 'square', 0.12);
+    bgmStep++;
+  }
+  function bgmStart() {
+    if (!soundOn) return;
+    audioReady(); actx.resume();
+    if (bgmTimer) return;
+    bgmStep = 0; bgmTick();
+    bgmTimer = setInterval(bgmTick, A_8 * 1000);
+  }
+  function bgmStop() { clearInterval(bgmTimer); bgmTimer = null; }
+  // 효과음
+  function sfxCatch() { if (!actx) return; const t = actx.currentTime; aTone(AF(12), t, 0.08, 'square', 0.20); aTone(AF(19), t + 0.05, 0.11, 'square', 0.18); }
+  function sfxGold()  { if (!actx) return; const t = actx.currentTime; [0,4,7,12,16].forEach((n,i)=>aTone(AF(n+12), t+i*0.05, 0.14, 'triangle', 0.18)); }
+  function sfxBomb()  {
+    if (!actx) return; const t = actx.currentTime;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(200, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.28);
+    g.gain.setValueAtTime(0.28, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.connect(g); g.connect(amaster); o.start(t); o.stop(t + 0.31);
+    aNoise(t, 0.18, 700, 0.22);
+  }
+  function sfxMiss()  { if (!actx) return; const t = actx.currentTime; aTone(AF(2), t, 0.13, 'sine', 0.16); aTone(AF(-3), t + 0.08, 0.15, 'sine', 0.14); }
+  function sfxOver()  { if (!actx) return; const t = actx.currentTime; [12,7,4,0].forEach((n,i)=>aTone(AF(n), t+i*0.12, 0.22, 'triangle', 0.18)); }
 
   let state = 'menu';
   let basket, items, particles, score, lives, best, spawnTimer, elapsed, lastTime, shake;
@@ -164,12 +244,14 @@
           lives--;
           shake = 0.35;
           burst(it.x, catchY, '💥', 10);
+          sfxBomb();
           if (navigator.vibrate) navigator.vibrate(120);
           if (lives <= 0) { gameOver(); return; }
         } else {
           const pts = it.type === 'gold' ? 5 : 1;
           score += pts;
           burst(it.x, catchY, it.type === 'gold' ? '✨' : it.emoji, 6);
+          if (it.type === 'gold') sfxGold(); else sfxCatch();
           if (navigator.vibrate) navigator.vibrate(15);
         }
         items.splice(i, 1);
@@ -181,6 +263,7 @@
         if (it.type === 'fruit' || it.type === 'gold') {
           lives--;
           shake = 0.2;
+          sfxMiss();
           if (navigator.vibrate) navigator.vibrate(60);
           if (lives <= 0) { gameOver(); return; }
         }
@@ -254,6 +337,8 @@
 
   function gameOver() {
     state = 'over';
+    bgmStop();
+    sfxOver();
     if (score > best) {
       best = score;
       localStorage.setItem('fruitBest', best);
@@ -282,6 +367,22 @@
     state = 'play';
     overlay.classList.add('hidden');
     lastTime = performance.now();
+    bgmStart();          // 게임 시작과 함께 신나는 배경음악 (탭 = 사용자 제스처)
+  });
+
+  // 소리 ON/OFF
+  const muteBtn = document.getElementById('muteBtn');
+  muteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    soundOn = !soundOn;
+    muteBtn.textContent = soundOn ? '🔊' : '🔇';
+    if (!soundOn) {
+      bgmStop();
+      if (amaster) amaster.gain.value = 0;
+    } else {
+      if (amaster) amaster.gain.value = 0.30;
+      if (state === 'play') bgmStart();
+    }
   });
 
   requestAnimationFrame(loop);
